@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Repo-root stub so Vercel's Next.js framework detection succeeds without setting Root Directory. The actual app is apps/web.",
   "scripts": {
-    "build": "cd apps/web && npm install --no-audit --no-fund && npm run build"
+    "build": "cd apps/web && npm install --include=dev --no-audit --no-fund && npm run build"
   },
   "dependencies": {
     "next": "^15.5.18"
