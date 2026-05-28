@@ -52,7 +52,9 @@ export interface CHCompany {
 
 function authHeader(apiKey: string): string {
   // Companies House uses HTTP Basic with username=apiKey, no password.
-  const b64 = Buffer.from(`${apiKey}:`).toString("base64");
+  // Trim defensively — a stray newline in the env var would silently 401.
+  const cleaned = apiKey.trim();
+  const b64 = Buffer.from(`${cleaned}:`).toString("base64");
   return `Basic ${b64}`;
 }
 
