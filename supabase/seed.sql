@@ -1,17 +1,6 @@
--- One demo zone (Park Royal industrial estate, west London) so the
--- pipeline can be exercised end-to-end after a fresh migration.
-
-insert into zones (name, description, boundary, zoom, status)
-values (
-  'Park Royal (demo)',
-  'A small slice of Park Royal industrial estate, used for end-to-end testing.',
-  ST_GeogFromText('SRID=4326;POLYGON((
-    -0.27050 51.52900,
-    -0.26500 51.52900,
-    -0.26500 51.53300,
-    -0.27050 51.53300,
-    -0.27050 51.52900
-  ))'),
-  19,
-  'active'
-);
+-- The schema migration is enough to start. To populate real businesses,
+-- hit POST /api/leads/seed-osm from the deployed app (or click "Pull
+-- real businesses" on the dashboard). That endpoint queries OpenStreetMap
+-- for welders, fabricators, and gas suppliers across three UK industrial
+-- estates (Park Royal, Slough Trading Estate, Trafford Park) and creates
+-- real leads from them — real names, real addresses, real coordinates.
