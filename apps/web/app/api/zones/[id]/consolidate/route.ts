@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { supabaseService } from "@/lib/supabase/server";
 import { clusterDetections } from "@/lib/geo/clustering";
 import { reverseGeocode } from "@/lib/imagery/google";
+import { normalizePoint } from "@/lib/geo/parse";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -21,10 +22,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     .eq("review_result", "confirmed");
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const points = (dets ?? []).map(d => {
-    const pt = d.location as unknown as GeoJSON.Point;
-    return { id: d.id, lng: pt.coordinates[0], lat: pt.coordinates[1], confidence: d.confidence };
-  });
+  const points = (dets ?? [])
+    .map(d => {
+      const p = normalizePoint(d.location);
+      if (!p) return null;
+      return { id: d.id as string, lng: p.lng, lat: p.lat, confidence: d.confidence as number };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
 
   const clusters = clusterDetections(points, 25, 1);
   let leadsCreated = 0;

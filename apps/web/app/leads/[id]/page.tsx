@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { supabaseService } from "@/lib/supabase/server";
 import LeadDetail from "@/components/LeadDetail";
+import { normalizePoint } from "@/lib/geo/parse";
 
 export const dynamic = "force-dynamic";
 
@@ -58,10 +59,10 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
   }
 
   // Site centroid for "Open in maps" / external Street View link.
-  const siteShape = (lead.sites as unknown) as { centroid?: { coordinates: [number, number] } } | { centroid?: { coordinates: [number, number] } }[] | null;
+  // Centroid arrives as GeoJSON or hex EWKB depending on Supabase config; normalise both.
+  const siteShape = (lead.sites as unknown) as { centroid?: unknown } | { centroid?: unknown }[] | null;
   const site = Array.isArray(siteShape) ? siteShape[0] : siteShape;
-  const coords = site?.centroid?.coordinates;
-  const latLng = coords ? { lat: coords[1], lng: coords[0] } : null;
+  const latLng = normalizePoint(site?.centroid);
 
   return (
     <LeadDetail

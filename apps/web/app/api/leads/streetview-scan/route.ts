@@ -15,11 +15,12 @@ import pLimit from "p-limit";
 import { supabaseService } from "@/lib/supabase/server";
 import { fetchStreetViewTile } from "@/lib/imagery/google";
 import { env } from "@/lib/env";
+import { normalizePoint } from "@/lib/geo/parse";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-interface SiteShape { centroid: { coordinates: [number, number]; type: "Point" } | unknown }
+interface SiteShape { centroid: unknown }
 
 export async function POST(req: Request) {
   if (!env.googleKey) {
@@ -52,12 +53,14 @@ export async function POST(req: Request) {
 
   await Promise.all((leads ?? []).map(l => gate(async () => {
     // Supabase's TS inference types the FK-joined site as array; runtime returns one row.
+    // Centroid arrives either as GeoJSON (if the project has GeoJSON-for-geometry
+    // enabled) or as raw EWKB hex; normalisePoint handles both.
     const siteRaw = (l.sites as unknown) as SiteShape | SiteShape[] | null;
     const site = Array.isArray(siteRaw) ? siteRaw[0] : siteRaw;
-    const centroid = site?.centroid as { coordinates: [number, number] } | undefined;
-    if (!centroid?.coordinates) { skipped++; return; }
+    const point = normalizePoint(site?.centroid);
+    if (!point) { skipped++; return; }
 
-    const [lng, lat] = centroid.coordinates;
+    const { lng, lat } = point;
     try {
       const startedAt = Date.now();
       const tile = await fetchStreetViewTile({
