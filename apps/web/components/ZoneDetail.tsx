@@ -16,7 +16,7 @@ interface Props {
 
 export default function ZoneDetail({ zone, tileCount, detectionCount, leadCount }: Props) {
   const [status, setStatus] = useState(zone.status);
-  const [busy, setBusy] = useState<null | "fetch" | "consolidate">(null);
+  const [busy, setBusy] = useState<null | "fetch" | "consolidate" | "detect">(null);
   const [log, setLog] = useState<string | null>(null);
 
   async function setZoneStatus(next: string) {
@@ -38,6 +38,14 @@ export default function ZoneDetail({ zone, tileCount, detectionCount, leadCount 
   async function runConsolidate() {
     setBusy("consolidate"); setLog(null);
     const res = await fetch(`/api/zones/${zone.id}/consolidate`, { method: "POST" });
+    const json = await res.json();
+    setLog(JSON.stringify(json, null, 2));
+    setBusy(null);
+  }
+
+  async function runDetect() {
+    setBusy("detect"); setLog(null);
+    const res = await fetch(`/api/zones/${zone.id}/detect`, { method: "POST" });
     const json = await res.json();
     setLog(JSON.stringify(json, null, 2));
     setBusy(null);
@@ -88,11 +96,20 @@ export default function ZoneDetail({ zone, tileCount, detectionCount, leadCount 
             className="px-4 py-2.5 rounded-lg bg-ink text-white text-sm font-medium disabled:opacity-40 hover:bg-ink/90 transition-colors">
             {busy === "fetch" ? "Fetching tiles…" : "Run imagery sweep"}
           </button>
+          <button onClick={runDetect} disabled={busy !== null || tileCount === 0}
+            className="px-4 py-2.5 rounded-lg bg-accent text-white text-sm font-medium disabled:opacity-40 hover:bg-accent/90 transition-colors">
+            {busy === "detect" ? "Detecting…" : `Run detection (${tileCount} tiles)`}
+          </button>
           <button onClick={runConsolidate} disabled={busy !== null}
             className="px-4 py-2.5 rounded-lg bg-white border border-slate-200 text-sm font-medium hover:bg-slate-50 disabled:opacity-40 transition-colors">
             {busy === "consolidate" ? "Consolidating…" : "Cluster → leads"}
           </button>
         </div>
+        <p className="text-[11px] text-slate-500">
+          Detection runs YOLO on cached tiles via the worker on Fly.io. Set
+          <code className="mx-1 px-1 bg-slate-100 rounded">WORKER_URL</code> +
+          <code className="mx-1 px-1 bg-slate-100 rounded">WORKER_API_KEY</code> in Vercel after deploying.
+        </p>
         {log && <pre className="text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-auto max-h-64">{log}</pre>}
       </section>
 

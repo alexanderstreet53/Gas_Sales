@@ -9,13 +9,19 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgl1 libglib2.0-0 ca-certificates \
+    libgl1 libglib2.0-0 ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY pyproject.toml ./
 COPY app ./app
-COPY weights ./weights
+
+# Download pretrained YOLOv8n at build time so the worker boots fast and
+# the repo doesn't need a committed weights file. Drop a fine-tuned
+# best.pt into weights/ later to override.
+RUN mkdir -p weights && \
+    curl -fSL https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.pt \
+      -o weights/best.pt
 
 RUN pip install --upgrade pip && pip install .
 
