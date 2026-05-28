@@ -13,7 +13,7 @@ export default async function ReviewPage() {
     .limit(25);
 
   const items = await Promise.all((dets ?? []).map(async d => {
-    const tile = d.imagery_tiles as { storage_path: string; width_px: number; height_px: number } | null;
+    const tile = d.imagery_tiles as unknown as { storage_path: string; width_px: number; height_px: number } | null;
     let signedUrl = "";
     if (tile) {
       const signed = await sb.storage.from("imagery").createSignedUrl(tile.storage_path, 60 * 60);
