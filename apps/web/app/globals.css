@@ -20,3 +20,8 @@ a { color: theme('colors.accent'); }
 /* Inputs / buttons feel right on touch. */
 button, [role="button"], input, select, textarea { touch-action: manipulation; }
 input, select, textarea { font-size: 16px; } /* prevent iOS zoom */
+
+/* Safe-area padding helpers for iOS bottom bar / Dynamic Island. */
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+.pt-safe { padding-top: max(env(safe-area-inset-top), 0px); }
+.pb-safe-nav { padding-bottom: calc(env(safe-area-inset-bottom) + 4.25rem); }

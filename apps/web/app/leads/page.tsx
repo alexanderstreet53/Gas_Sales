@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { supabaseService } from "@/lib/supabase/server";
 import StatusPill from "@/components/StatusPill";
-import SeedRealDataButton from "@/components/SeedRealDataButton";
+import DataSourcesPanel from "@/components/DataSourcesPanel";
 import type { LeadStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -207,19 +207,16 @@ function Avatar({ name }: { name: string | null }) {
 
 function EmptyState() {
   return (
-    <div className="rounded-2xl bg-gradient-to-br from-ink to-slate-800 text-white p-8 sm:p-12 text-center shadow-lg">
-      <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-white/10 mb-4">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-             strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-        </svg>
+    <div className="space-y-4">
+      <div className="rounded-2xl bg-gradient-to-br from-ink to-slate-800 text-white p-5 sm:p-7 shadow-lg">
+        <div className="text-[11px] uppercase tracking-wide text-slate-300">Get started</div>
+        <h2 className="text-lg sm:text-2xl font-semibold mt-1">No leads yet</h2>
+        <p className="text-sm text-slate-300 mt-1 max-w-xl">
+          Pull real UK industrial businesses, then optionally run a Street View
+          scan to attach imagery.
+        </p>
       </div>
-      <h2 className="text-xl font-semibold">No leads yet</h2>
-      <p className="text-sm text-slate-300 mt-1 max-w-md mx-auto">
-        Pull real industrial businesses from OpenStreetMap to get started.
-        Welders, fabricators, and gas suppliers across three UK industrial estates.
-      </p>
-      <div className="mt-5 inline-block"><SeedRealDataButton /></div>
+      <DataSourcesPanel hasLeads={false} />
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { supabaseService } from "@/lib/supabase/server";
 import StatusPill from "@/components/StatusPill";
-import SeedRealDataButton from "@/components/SeedRealDataButton";
+import DataSourcesPanel from "@/components/DataSourcesPanel";
 import type { LeadStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -73,14 +73,14 @@ export default async function HomePage() {
 
   if (!d) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-5">
         <Hero />
-        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-6 text-sm text-amber-900">
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">
           <div className="font-medium mb-1">Supabase isn&apos;t connected yet.</div>
-          Set <code className="px-1 bg-amber-100 rounded">NEXT_PUBLIC_SUPABASE_URL</code>,{" "}
-          <code className="px-1 bg-amber-100 rounded">NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code>, and{" "}
-          <code className="px-1 bg-amber-100 rounded">SUPABASE_SECRET_KEY</code> in Vercel,
-          then run the SQL migration in <code className="px-1 bg-amber-100 rounded">supabase/migrations/0001_initial_schema.sql</code>.
+          Set <code className="px-1 bg-amber-100 rounded text-[12px]">NEXT_PUBLIC_SUPABASE_URL</code>,{" "}
+          <code className="px-1 bg-amber-100 rounded text-[12px]">NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code>, and{" "}
+          <code className="px-1 bg-amber-100 rounded text-[12px]">SUPABASE_SECRET_KEY</code> in Vercel,
+          then run the SQL migration.
         </div>
       </div>
     );
@@ -89,53 +89,50 @@ export default async function HomePage() {
   const empty = d.leads === 0;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       <Hero />
 
       {empty && (
-        <div className="rounded-2xl bg-gradient-to-br from-ink to-slate-800 text-white p-6 sm:p-8 shadow-lg">
-          <div className="grid sm:grid-cols-[1fr_auto] gap-4 items-center">
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-300">Get started</div>
-              <h2 className="text-xl sm:text-2xl font-semibold mt-1">No leads yet — pull real businesses</h2>
-              <p className="text-sm text-slate-300 mt-1 max-w-xl">
-                Fetch real welders, fabricators, and gas suppliers from OpenStreetMap
-                across Park Royal, Slough Trading Estate, and Trafford Park. Real names,
-                real addresses, real coordinates — populated in seconds.
-              </p>
-            </div>
-            <div className="flex-shrink-0">
-              <SeedRealDataButton />
-            </div>
-          </div>
-        </div>
+        <section className="rounded-2xl bg-gradient-to-br from-ink to-slate-800 text-white p-5 sm:p-7 shadow-lg">
+          <div className="text-[11px] uppercase tracking-wide text-slate-300">Get started</div>
+          <h2 className="text-lg sm:text-2xl font-semibold mt-1">No leads yet — pull some real data</h2>
+          <p className="text-sm text-slate-300 mt-1 max-w-xl">
+            Two sources, both real. OpenStreetMap works without setup; Companies
+            House needs a free key but covers every registered UK business.
+          </p>
+        </section>
       )}
 
-      <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <Kpi label="Zones"          value={d.zones}                href="/zones"  icon={<MapIcon />} />
-        <Kpi label="Leads"          value={d.leads}                href="/leads"  icon={<UsersIcon />} accent="primary" />
-        <Kpi label="In review"      value={d.unreviewed}           href="/review" icon={<CheckIcon />} />
-        <Kpi label="Cached tiles"   value={d.tiles}                href="/spend"  icon={<LayersIcon />} />
-        <Kpi label="Spend (24h)"    value={`$${d.spend24h.toFixed(2)}`} href="/spend" icon={<ChartIcon />} />
+      <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
+        <Kpi label="Zones"        value={d.zones}                  href="/zones"  icon={<MapIcon />} />
+        <Kpi label="Leads"        value={d.leads}                  href="/leads"  icon={<UsersIcon />} accent="primary" />
+        <Kpi label="In review"    value={d.unreviewed}             href="/review" icon={<CheckIcon />} />
+        <Kpi label="Cached tiles" value={d.tiles}                  href="/spend"  icon={<LayersIcon />} />
+        <Kpi label="Spend (24h)"  value={`$${d.spend24h.toFixed(2)}`} href="/spend" icon={<ChartIcon />} />
+      </section>
+
+      <section className="space-y-3">
+        <SectionHeading title="Data sources" sub="Pull real businesses, then enrich with imagery." />
+        <DataSourcesPanel hasLeads={d.leads > 0} />
       </section>
 
       {d.leads > 0 && (
-        <section className="grid lg:grid-cols-3 gap-4">
+        <section className="grid lg:grid-cols-3 gap-3 sm:gap-4">
           <div className="bg-white rounded-2xl border border-slate-200 lg:col-span-2 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="font-medium">Recent leads</h2>
+            <div className="px-4 sm:px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="font-medium text-sm">Recent leads</h2>
               <Link href="/leads" className="text-xs text-slate-500 hover:text-ink">View all →</Link>
             </div>
             <ul className="divide-y divide-slate-100">
               {d.recentLeads.map(l => (
                 <li key={l.id}>
-                  <Link href={`/leads/${l.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 transition-colors">
+                  <Link href={`/leads/${l.id}`} className="flex items-center gap-3 px-4 sm:px-5 py-3 hover:bg-slate-50 active:bg-slate-100 transition-colors">
                     <Avatar name={l.business_name} />
                     <div className="flex-1 min-w-0">
                       <div className="font-medium truncate text-sm">
                         {l.business_name ?? <span className="italic text-slate-400">unknown</span>}
                       </div>
-                      <div className="text-xs text-slate-500 truncate">
+                      <div className="text-[11px] text-slate-500 truncate">
                         {l.zones?.name ?? "—"} · {l.formatted_addr ?? "no address"}
                       </div>
                     </div>
@@ -149,26 +146,14 @@ export default async function HomePage() {
             </ul>
           </div>
 
-          <div className="space-y-3">
-            <div className="bg-white rounded-2xl border border-slate-200 p-5">
-              <h2 className="font-medium">Lead pipeline</h2>
-              <div className="mt-3 space-y-1.5">
-                <PipelineRow status="new"       count={d.statusCounts.new}       total={d.leads} />
-                <PipelineRow status="verified"  count={d.statusCounts.verified}  total={d.leads} />
-                <PipelineRow status="contacted" count={d.statusCounts.contacted} total={d.leads} />
-                <PipelineRow status="converted" count={d.statusCounts.converted} total={d.leads} />
-                <PipelineRow status="rejected"  count={d.statusCounts.rejected}  total={d.leads} />
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-slate-200 p-5">
-              <h2 className="font-medium">Add more data</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Pull additional real businesses from OpenStreetMap.
-              </p>
-              <div className="mt-3">
-                <SeedRealDataButton variant="ghost" />
-              </div>
+          <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
+            <h2 className="font-medium text-sm">Lead pipeline</h2>
+            <div className="mt-3 space-y-2">
+              <PipelineRow status="new"       count={d.statusCounts.new}       total={d.leads} />
+              <PipelineRow status="verified"  count={d.statusCounts.verified}  total={d.leads} />
+              <PipelineRow status="contacted" count={d.statusCounts.contacted} total={d.leads} />
+              <PipelineRow status="converted" count={d.statusCounts.converted} total={d.leads} />
+              <PipelineRow status="rejected"  count={d.statusCounts.rejected}  total={d.leads} />
             </div>
           </div>
         </section>
@@ -182,10 +167,18 @@ function Hero() {
     <section className="space-y-1">
       <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Dashboard</h1>
       <p className="text-slate-600 text-sm sm:text-base max-w-2xl">
-        Discover UK businesses using industrial gas tanks — welders, fabricators,
-        metal repair — by analysing satellite imagery across defined zones.
+        Discover UK businesses using industrial gas tanks — welders, fabricators, gas suppliers.
       </p>
     </section>
+  );
+}
+
+function SectionHeading({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div>
+      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+      {sub && <p className="text-xs text-slate-500 mt-0.5">{sub}</p>}
+    </div>
   );
 }
 
@@ -194,12 +187,12 @@ function Kpi({ label, value, href, icon, accent }: KpiProps) {
   const ring = accent === "primary" ? "ring-1 ring-accent/30 bg-accent/[0.04]" : "";
   return (
     <Link href={href}
-      className={`group block rounded-2xl border border-slate-200 bg-white p-4 hover:shadow-md transition-all ${ring}`}>
+      className={`group block rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 hover:shadow-md active:bg-slate-50 transition-all ${ring}`}>
       <div className="flex items-center justify-between">
-        <div className="text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+        <div className="text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
         <div className="text-slate-400 group-hover:text-accent transition-colors">{icon}</div>
       </div>
-      <div className="text-2xl sm:text-3xl font-semibold mt-1 tabular-nums">{value}</div>
+      <div className="text-xl sm:text-2xl lg:text-3xl font-semibold mt-1 tabular-nums">{value}</div>
     </Link>
   );
 }
@@ -236,8 +229,8 @@ function Avatar({ name }: { name: string | null }) {
   );
 }
 
-function MapIcon()    { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>; }
-function UsersIcon()  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>; }
-function CheckIcon()  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>; }
-function LayersIcon() { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>; }
-function ChartIcon()  { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>; }
+function MapIcon()    { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>; }
+function UsersIcon()  { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>; }
+function CheckIcon()  { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>; }
+function LayersIcon() { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>; }
+function ChartIcon()  { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>; }

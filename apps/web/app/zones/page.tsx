@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { supabaseService } from "@/lib/supabase/server";
 import ZoneDrawer from "@/components/ZoneDrawer";
-import SeedRealDataButton from "@/components/SeedRealDataButton";
+import DataSourcesPanel from "@/components/DataSourcesPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -47,8 +47,18 @@ export default async function ZonesPage() {
         </div>
       </div>
 
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">Pull pre-defined UK estates</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            One click creates the zone and fills it with real businesses.
+          </p>
+        </div>
+        <DataSourcesPanel hasLeads={zones.length > 0} />
+      </section>
+
       <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="font-medium">New zone</h2>
+        <h2 className="font-medium text-sm">Draw a new zone</h2>
         <p className="text-xs text-slate-500 mt-0.5 mb-3">
           Click the map to add corners, close at 3+ points, then save.
         </p>
@@ -56,14 +66,12 @@ export default async function ZonesPage() {
       </div>
 
       <section className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+        <div className="px-4 sm:px-5 py-3 border-b border-slate-100">
           <h2 className="text-sm font-medium">Existing zones</h2>
-          <SeedRealDataButton variant="ghost" />
         </div>
         {zones.length === 0 ? (
           <div className="p-8 text-center">
-            <p className="text-sm text-slate-500 mb-4">No zones yet.</p>
-            <SeedRealDataButton />
+            <p className="text-sm text-slate-500">No zones yet. Pull a pre-defined estate above to get going.</p>
           </div>
         ) : (
           <ul className="divide-y divide-slate-100">
