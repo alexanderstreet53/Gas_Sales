@@ -8,7 +8,6 @@ const config: NextConfig = {
       { protocol: "https", hostname: "maps.googleapis.com" },
     ],
   },
-  experimental: { typedRoutes: true },
 };
 
 export default config;

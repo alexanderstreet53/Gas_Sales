@@ -24,12 +24,24 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
     .limit(1)
     .maybeSingle();
 
+  // Supabase's TS inference returns the joined table as an array; at runtime
+  // it's a single object because the FK is many-to-one. Normalise here.
+  const tile = topDetection?.imagery_tiles as unknown as
+    { storage_path: string; width_px: number; height_px: number } | null;
+
   let signedUrl: string | null = null;
-  if (topDetection?.imagery_tiles && "storage_path" in (topDetection.imagery_tiles as object)) {
-    const path = (topDetection.imagery_tiles as { storage_path: string }).storage_path;
-    const signed = await sb.storage.from("imagery").createSignedUrl(path, 60 * 60);
+  if (tile?.storage_path) {
+    const signed = await sb.storage.from("imagery").createSignedUrl(tile.storage_path, 60 * 60);
     signedUrl = signed.data?.signedUrl ?? null;
   }
 
-  return <LeadDetail lead={lead} topDetection={topDetection} signedUrl={signedUrl} />;
+  const topDetectionForView = topDetection
+    ? {
+        bbox_pixels: topDetection.bbox_pixels as number[] | null,
+        confidence: topDetection.confidence as number,
+        imagery_tiles: tile ? { width_px: tile.width_px, height_px: tile.height_px } : null,
+      }
+    : null;
+
+  return <LeadDetail lead={lead} topDetection={topDetectionForView} signedUrl={signedUrl} />;
 }
