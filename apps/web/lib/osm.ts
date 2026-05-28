@@ -5,7 +5,35 @@
 // data until the satellite-imagery detection pipeline is wired up, and as
 // an ongoing enrichment source even after.
 
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+const OVERPASS_URLS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+];
+
+const OSM_HEADERS = {
+  "Content-Type": "application/x-www-form-urlencoded",
+  "Accept": "application/json",
+  // Overpass requires a descriptive User-Agent; cloud IPs without one get 406/429.
+  "User-Agent": "gas-sales/0.1 (+https://github.com/alexanderstreet53/Gas_Sales)",
+};
+
+async function postOverpass(query: string): Promise<{ elements: OsmFeature[] }> {
+  const body = `data=${encodeURIComponent(query)}`;
+  let lastError = "no mirror reached";
+  for (const url of OVERPASS_URLS) {
+    try {
+      const res = await fetch(url, { method: "POST", headers: OSM_HEADERS, body });
+      if (res.ok) return await res.json() as { elements: OsmFeature[] };
+      const host = new URL(url).host;
+      const snippet = (await res.text().catch(() => "")).slice(0, 200);
+      lastError = `${host} → ${res.status} ${snippet}`;
+    } catch (e) {
+      lastError = (e as Error).message;
+    }
+  }
+  throw new Error(`Overpass: all mirrors failed (${lastError})`);
+}
 
 interface OsmFeature {
   type: "node" | "way" | "relation";
@@ -53,13 +81,7 @@ export async function fetchIndustrialBusinesses(bbox: Bbox): Promise<OsmBusiness
     out center tags;
   `;
 
-  const res = await fetch(OVERPASS_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `data=${encodeURIComponent(q)}`,
-  });
-  if (!res.ok) throw new Error(`Overpass ${res.status}: ${await res.text()}`);
-  const json = await res.json() as { elements: OsmFeature[] };
+  const json = await postOverpass(q);
 
   // Deduplicate by name + coarse coords (same business sometimes appears as
   // node + bounding way at the same spot).
