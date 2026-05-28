@@ -1,0 +1,11 @@
+{
+  "name": "Happy Talk",
+  "short_name": "Happy Talk",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#FFF8F2",
+  "theme_color": "#FFF8F2",
+  "description": "A softer way to talk to yourself.",
+  "orientation": "portrait-primary",
+  "prefer_related_applications": false
+}

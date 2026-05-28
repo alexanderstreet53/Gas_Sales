@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+
+html, body {
+  height: 100%;
+  background: theme('colors.canvas');
+  color: theme('colors.ink');
+  -webkit-tap-highlight-color: transparent;
+}
+
+a { color: theme('colors.accent'); }
+
+/* Hide horizontal-scroll scrollbars (used on the mobile nav). */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* Inputs / buttons feel right on touch. */
+button, [role="button"], input, select, textarea { touch-action: manipulation; }
+input, select, textarea { font-size: 16px; } /* prevent iOS zoom */
