@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import StreetViewScanButton from "@/components/StreetViewScanButton";
 
 interface Props {
   zone: {
@@ -69,19 +70,29 @@ export default function ZoneDetail({ zone, tileCount, detectionCount, leadCount 
         </div>
       </section>
 
-      <section className="bg-white rounded-xl border p-4 space-y-3">
-        <h2 className="font-medium">Pipeline actions</h2>
+      <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
+        <h2 className="font-medium text-sm">Pipeline actions</h2>
         <div className="flex flex-col sm:flex-row gap-2 text-sm">
           <button onClick={runFetch} disabled={busy !== null || status !== "active"}
-            className="px-3 py-2 rounded-lg bg-ink text-white disabled:opacity-40">
-            {busy === "fetch" ? "Fetching tiles…" : "Run imagery sweep (one chunk)"}
+            className="px-4 py-2.5 rounded-lg bg-ink text-white text-sm font-medium disabled:opacity-40 hover:bg-ink/90 transition-colors">
+            {busy === "fetch" ? "Fetching tiles…" : "Run imagery sweep"}
           </button>
           <button onClick={runConsolidate} disabled={busy !== null}
-            className="px-3 py-2 rounded-lg bg-white border">
-            {busy === "consolidate" ? "Consolidating…" : "Cluster detections → leads"}
+            className="px-4 py-2.5 rounded-lg bg-white border border-slate-200 text-sm font-medium hover:bg-slate-50 disabled:opacity-40 transition-colors">
+            {busy === "consolidate" ? "Consolidating…" : "Cluster → leads"}
           </button>
         </div>
-        {log && <pre className="text-xs bg-slate-50 border rounded p-3 overflow-auto max-h-64">{log}</pre>}
+        {log && <pre className="text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-auto max-h-64">{log}</pre>}
+      </section>
+
+      <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
+        <div>
+          <h2 className="font-medium text-sm">Enrich this zone</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Pull a Street View image at every lead&apos;s site centroid. Needs <code className="text-[11px] bg-slate-100 px-1 rounded">GOOGLE_MAPS_API_KEY</code>.
+          </p>
+        </div>
+        <StreetViewScanButton zoneId={zone.id} />
       </section>
     </div>
   );
