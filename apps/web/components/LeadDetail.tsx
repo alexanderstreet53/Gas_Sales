@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import StatusPill from "@/components/StatusPill";
 import type { LeadStatus } from "@/lib/types";
 
@@ -9,6 +10,14 @@ const DEMO_STORAGE_KEY = "gt:demo-mode";
 interface Detection { class: string; confidence: number; bbox_pixels: number[] }
 
 interface TileMeta { id: string; width_px: number; height_px: number }
+
+interface StreetShot {
+  heading: number;
+  name: string;
+  url: string;
+  tile: TileMeta;
+  detections: Detection[];
+}
 
 interface Props {
   lead: {
@@ -24,9 +33,7 @@ interface Props {
   satelliteUrl: string | null;
   satelliteTile: TileMeta | null;
   satelliteDetections: Detection[];
-  streetViewUrl: string | null;
-  streetViewTile: TileMeta | null;
-  streetViewDetections: Detection[];
+  streetShots: StreetShot[];
   streetViewEmbedSrc: string | null;
   latLng: { lat: number; lng: number } | null;
 }
@@ -36,9 +43,9 @@ type View = "street" | "satellite";
 export default function LeadDetail({
   lead,
   satelliteUrl, satelliteTile, satelliteDetections,
-  streetViewUrl, streetViewTile, streetViewDetections,
-  streetViewEmbedSrc, latLng,
+  streetShots, streetViewEmbedSrc, latLng,
 }: Props) {
+  const router = useRouter();
   const [status, setStatus] = useState<LeadStatus>(lead.status);
   const [notes, setNotes] = useState(lead.notes ?? "");
   const [name, setName] = useState(lead.business_name ?? "");
@@ -70,20 +77,20 @@ export default function LeadDetail({
   }
   const demoQuery = demoMode ? "?demo=1" : "";
 
-  // Default to whichever view we actually have imagery for. Interactive
-  // embed wins over the cached static snapshot when both are available.
+  // Default to whichever view we actually have imagery for.
   const hasInteractiveStreet = !!streetViewEmbedSrc;
-  const hasStaticStreet = !!streetViewUrl;
+  const hasStaticStreet = streetShots.length > 0;
   const showStreet = hasInteractiveStreet || hasStaticStreet;
   const initialView: View = showStreet ? "street" : "satellite";
   const [view, setView] = useState<View>(initialView);
 
-  // Within the Street View tab, the user can flip between the interactive
-  // 360 iframe (browsing) and the static image (where detection boxes can
-  // be drawn). Default to "static" if there are detections to show.
+  // Default to static if any shot has detections; otherwise interactive 360.
+  const totalStreetDetections = streetShots.reduce((s, sh) => s + sh.detections.length, 0);
   const [streetMode, setStreetMode] = useState<"static" | "interactive">(
-    streetViewDetections.length > 0 && hasStaticStreet ? "static" : "interactive",
+    totalStreetDetections > 0 && hasStaticStreet ? "static" : "interactive",
   );
+  const [activeShotIdx, setActiveShotIdx] = useState(0);
+  const activeShot = streetShots[activeShotIdx];
 
   async function save() {
     setSaving(true);
@@ -113,8 +120,8 @@ export default function LeadDetail({
         parts.push("+ 0 detections from AI");
       }
       setScanResult(parts.join(" "));
-      // Give the user a moment to see the result, then refresh.
-      setTimeout(() => window.location.reload(), 1800);
+      // Soft refresh — re-renders server data without losing client state.
+      setTimeout(() => router.refresh(), 1200);
     } catch (e) {
       setScanError((e as Error).message);
     } finally {
@@ -132,7 +139,7 @@ export default function LeadDetail({
         `${json.demo ? "[demo] " : ""}${json.detectionsFound} detection${json.detectionsFound === 1 ? "" : "s"} on the tile covering this lead` +
         (json.duplicates ? ` (${json.duplicates} duplicate)` : ""),
       );
-      setTimeout(() => window.location.reload(), 1500);
+      setTimeout(() => router.refresh(), 1200);
     } catch (e) {
       setDetectError((e as Error).message);
     } finally {
@@ -162,49 +169,82 @@ export default function LeadDetail({
         )}
 
         {view === "street" && showStreet ? (
-          <div className="relative bg-slate-900">
-            {streetMode === "interactive" && hasInteractiveStreet ? (
-              <iframe
-                src={streetViewEmbedSrc!}
-                title="Street View"
-                className="w-full block border-0"
-                style={{ aspectRatio: "16 / 10" }}
-                loading="lazy"
-                allowFullScreen
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-            ) : hasStaticStreet ? (
-              <>
-                <img src={streetViewUrl!} alt="Street View" className="w-full block" />
-                {streetViewTile && streetViewDetections.map((d, i) => (
-                  <BboxOverlay key={i} bbox={d.bbox_pixels} width={streetViewTile.width_px} height={streetViewTile.height_px} label={`${d.class} ${(d.confidence * 100).toFixed(0)}%`} />
-                ))}
-              </>
-            ) : (
-              // Edge: interactive available but no cached static — fall back to iframe.
-              <iframe
-                src={streetViewEmbedSrc!}
-                title="Street View"
-                className="w-full block border-0"
-                style={{ aspectRatio: "16 / 10" }}
-                loading="lazy"
-                allowFullScreen
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-            )}
+          <div>
+            <div className="relative bg-slate-900">
+              {streetMode === "interactive" && hasInteractiveStreet ? (
+                <iframe
+                  src={streetViewEmbedSrc!}
+                  title="Street View"
+                  className="w-full block border-0"
+                  style={{ aspectRatio: "16 / 10" }}
+                  loading="lazy"
+                  allowFullScreen
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+              ) : activeShot ? (
+                <>
+                  <img src={activeShot.url} alt={`Street View ${activeShot.name}`} className="w-full block" />
+                  {activeShot.detections.map((d, i) => (
+                    <BboxOverlay key={i} bbox={d.bbox_pixels} width={activeShot.tile.width_px} height={activeShot.tile.height_px} label={`${d.class} ${(d.confidence * 100).toFixed(0)}%`} />
+                  ))}
+                </>
+              ) : (
+                <iframe
+                  src={streetViewEmbedSrc!}
+                  title="Street View"
+                  className="w-full block border-0"
+                  style={{ aspectRatio: "16 / 10" }}
+                  loading="lazy"
+                  allowFullScreen
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+              )}
 
-            {/* Toggle + detection count overlays */}
-            {hasInteractiveStreet && hasStaticStreet && (
-              <button
-                onClick={() => setStreetMode(m => m === "interactive" ? "static" : "interactive")}
-                className="absolute top-2 left-2 text-[11px] font-medium px-2.5 py-1 rounded-full bg-white/95 text-ink shadow hover:bg-white transition-colors"
-              >
-                {streetMode === "interactive" ? "Show detections" : "View 360"}
-              </button>
-            )}
-            {streetViewDetections.length > 0 && (
-              <div className="absolute top-2 right-2 bg-emerald-600/95 text-white text-[11px] font-medium px-2 py-1 rounded-full shadow">
-                {streetViewDetections.length} detection{streetViewDetections.length === 1 ? "" : "s"}
+              {hasInteractiveStreet && hasStaticStreet && (
+                <button
+                  onClick={() => setStreetMode(m => m === "interactive" ? "static" : "interactive")}
+                  className="absolute top-2 left-2 text-[11px] font-medium px-2.5 py-1 rounded-full bg-white/95 text-ink shadow hover:bg-white transition-colors"
+                >
+                  {streetMode === "interactive" ? "Show detections" : "View 360"}
+                </button>
+              )}
+              {streetMode === "static" && activeShot && activeShot.detections.length > 0 && (
+                <div className="absolute top-2 right-2 bg-emerald-600/95 text-white text-[11px] font-medium px-2 py-1 rounded-full shadow">
+                  {activeShot.detections.length} detection{activeShot.detections.length === 1 ? "" : "s"}
+                </div>
+              )}
+              {streetMode === "interactive" && totalStreetDetections > 0 && (
+                <div className="absolute top-2 right-2 bg-emerald-600/95 text-white text-[11px] font-medium px-2 py-1 rounded-full shadow">
+                  {totalStreetDetections} detection{totalStreetDetections === 1 ? "" : "s"} across all angles
+                </div>
+              )}
+            </div>
+
+            {/* N/E/S/W thumbnail strip */}
+            {streetMode === "static" && streetShots.length > 1 && (
+              <div className="px-3 py-2 bg-slate-50 border-t border-slate-100 flex gap-2 overflow-x-auto">
+                {streetShots.map((sh, idx) => (
+                  <button
+                    key={sh.tile.id}
+                    onClick={() => setActiveShotIdx(idx)}
+                    className={`flex-shrink-0 relative rounded-lg overflow-hidden border transition-all ${
+                      idx === activeShotIdx
+                        ? "border-ink ring-2 ring-ink/30"
+                        : "border-slate-200 hover:border-slate-300"
+                    }`}
+                    style={{ width: "112px" }}
+                  >
+                    <img src={sh.url} alt={sh.name} className="w-full h-16 object-cover" />
+                    <div className="absolute top-1 left-1 text-[10px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded">
+                      {sh.name}
+                    </div>
+                    {sh.detections.length > 0 && (
+                      <div className="absolute bottom-1 right-1 text-[10px] font-semibold text-white bg-emerald-600 px-1.5 py-0.5 rounded">
+                        {sh.detections.length}
+                      </div>
+                    )}
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -258,7 +298,7 @@ export default function LeadDetail({
             <button onClick={scanStreetView} disabled={scanning}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-white border border-slate-200 text-ink px-4 py-2.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 transition-colors">
               <EyeIcon className={scanning ? "animate-pulse" : ""} />
-              {scanning ? "Scanning…" : streetViewUrl ? "Re-scan Street View" : "Scan Street View"}
+              {scanning ? "Scanning N/E/S/W…" : streetShots.length > 0 ? "Re-scan Street View (4 angles)" : "Scan Street View (4 angles)"}
             </button>
             <button onClick={detectHere} disabled={detecting}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent text-white px-4 py-2.5 text-sm font-medium hover:bg-accent/90 disabled:opacity-50 transition-colors shadow-sm">

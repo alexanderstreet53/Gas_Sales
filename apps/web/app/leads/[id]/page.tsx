@@ -71,30 +71,48 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
     }
   }
 
-  // Street View tile, if a scan has been run.
+  // Street View shots — one per heading (N / E / S / W). Falls back to
+  // the legacy single-shot pointer if a multi-shot scan hasn't run yet.
   const enrichment = (lead.enrichment as Record<string, unknown> | null) ?? {};
-  const sv = enrichment.streetview as { tile_id?: string } | undefined;
-  let streetViewUrl: string | null = null;
-  let streetViewDetections: { class: string; confidence: number; bbox_pixels: number[] }[] = [];
-  let svTileMeta: { id: string; width_px: number; height_px: number } | null = null;
-  if (sv?.tile_id) {
+  interface ShotMeta { tile_id: string; heading: number; name?: string }
+  const shotMetas = (enrichment.streetviews as ShotMeta[] | undefined) ?? (() => {
+    const legacy = enrichment.streetview as { tile_id?: string } | undefined;
+    return legacy?.tile_id ? [{ tile_id: legacy.tile_id, heading: 0, name: "N" }] : [];
+  })();
+
+  interface StreetShot {
+    heading: number;
+    name: string;
+    url: string;
+    tile: { id: string; width_px: number; height_px: number };
+    detections: { class: string; confidence: number; bbox_pixels: number[] }[];
+  }
+
+  const streetShots: StreetShot[] = [];
+  for (const sm of shotMetas) {
     const { data: svTile } = await sb
       .from("imagery_tiles")
       .select("id, storage_path, width_px, height_px")
-      .eq("id", sv.tile_id)
+      .eq("id", sm.tile_id)
       .maybeSingle();
-    if (svTile?.storage_path) {
-      const signed = await sb.storage.from("imagery").createSignedUrl(svTile.storage_path, 60 * 60);
-      streetViewUrl = signed.data?.signedUrl ?? null;
-      svTileMeta = { id: svTile.id, width_px: svTile.width_px, height_px: svTile.height_px };
-      const { data: dets } = await sb
-        .from("detections")
-        .select("class, confidence, bbox_pixels")
-        .eq("tile_id", svTile.id)
-        .order("confidence", { ascending: false });
-      streetViewDetections = ((dets ?? []) as { class: string; confidence: number; bbox_pixels: number[] }[]);
-    }
+    if (!svTile?.storage_path) continue;
+    const signed = await sb.storage.from("imagery").createSignedUrl(svTile.storage_path, 60 * 60);
+    if (!signed.data?.signedUrl) continue;
+    const { data: dets } = await sb
+      .from("detections")
+      .select("class, confidence, bbox_pixels")
+      .eq("tile_id", svTile.id)
+      .order("confidence", { ascending: false });
+    streetShots.push({
+      heading: sm.heading,
+      name: sm.name ?? `${sm.heading}°`,
+      url: signed.data.signedUrl,
+      tile: { id: svTile.id, width_px: svTile.width_px, height_px: svTile.height_px },
+      detections: ((dets ?? []) as { class: string; confidence: number; bbox_pixels: number[] }[]),
+    });
   }
+  // Sort N, E, S, W for predictable display.
+  streetShots.sort((a, b) => a.heading - b.heading);
 
   // Interactive 360 Street View via the Maps Embed API.
   const googleKey = process.env.GOOGLE_MAPS_API_KEY ?? "";
@@ -108,9 +126,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       satelliteUrl={satelliteUrl}
       satelliteTile={satTileMeta}
       satelliteDetections={detections}
-      streetViewUrl={streetViewUrl}
-      streetViewTile={svTileMeta}
-      streetViewDetections={streetViewDetections}
+      streetShots={streetShots}
       streetViewEmbedSrc={streetViewEmbedSrc}
       latLng={latLng}
     />
