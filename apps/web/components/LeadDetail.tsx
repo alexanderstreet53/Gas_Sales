@@ -57,6 +57,12 @@ export default function LeadDetail({
     if (typeof window === "undefined") return;
     setDemoMode(window.localStorage.getItem(DEMO_STORAGE_KEY) === "1");
   }, []);
+
+  // Wake the YOLO worker in the background as soon as the page loads so
+  // the user's first detect click lands warm instead of cold-starting.
+  useEffect(() => {
+    fetch("/api/worker/warmup").catch(() => { /* fire and forget */ });
+  }, []);
   function toggleDemo() {
     const next = !demoMode;
     setDemoMode(next);
