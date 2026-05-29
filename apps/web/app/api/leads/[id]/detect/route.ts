@@ -37,7 +37,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   // 1. Lead + site centroid
   const { data: lead, error } = await sb
     .from("leads")
-    .select("id, zone_id, sites(centroid)")
+    .select("id, zone_id, site_id, sites(centroid)")
     .eq("id", id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -170,6 +170,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       return {
         tile_id: best!.id,
         zone_id: best!.zone_id,
+        site_id: lead.site_id as string | null, // link to the lead's site so the detail page can find it
         class: d.class,
         confidence: d.confidence,
         bbox_pixels: d.bbox_pixels,

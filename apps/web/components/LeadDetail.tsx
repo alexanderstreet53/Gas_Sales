@@ -4,6 +4,10 @@ import { useState } from "react";
 import StatusPill from "@/components/StatusPill";
 import type { LeadStatus } from "@/lib/types";
 
+interface Detection { class: string; confidence: number; bbox_pixels: number[] }
+
+interface TileMeta { id: string; width_px: number; height_px: number }
+
 interface Props {
   lead: {
     id: string;
@@ -15,20 +19,24 @@ interface Props {
     notes: string | null;
     zones?: { name: string } | null;
   };
-  topDetection: {
-    bbox_pixels: number[] | null;
-    confidence: number;
-    imagery_tiles: { width_px: number; height_px: number } | null;
-  } | null;
   satelliteUrl: string | null;
+  satelliteTile: TileMeta | null;
+  satelliteDetections: Detection[];
   streetViewUrl: string | null;
+  streetViewTile: TileMeta | null;
+  streetViewDetections: Detection[];
   streetViewEmbedSrc: string | null;
   latLng: { lat: number; lng: number } | null;
 }
 
 type View = "street" | "satellite";
 
-export default function LeadDetail({ lead, topDetection, satelliteUrl, streetViewUrl, streetViewEmbedSrc, latLng }: Props) {
+export default function LeadDetail({
+  lead,
+  satelliteUrl, satelliteTile, satelliteDetections,
+  streetViewUrl, streetViewTile, streetViewDetections,
+  streetViewEmbedSrc, latLng,
+}: Props) {
   const [status, setStatus] = useState<LeadStatus>(lead.status);
   const [notes, setNotes] = useState(lead.notes ?? "");
   const [name, setName] = useState(lead.business_name ?? "");
@@ -104,9 +112,6 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
     }
   }
 
-  const tile = topDetection?.imagery_tiles;
-  const bbox = topDetection?.bbox_pixels as [number, number, number, number] | undefined;
-
   const gMapsUrl = latLng
     ? `https://www.google.com/maps/search/?api=1&query=${latLng.lat},${latLng.lng}`
     : null;
@@ -114,7 +119,7 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
     ? `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${latLng.lat},${latLng.lng}`
     : null;
 
-  const showSatellite = satelliteUrl && tile;
+  const showSatellite = !!(satelliteUrl && satelliteTile);
   const showTabs = showSatellite && showStreet;
 
   return (
@@ -130,7 +135,7 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
 
         {view === "street" && showStreet ? (
           hasInteractiveStreet ? (
-            <div className="bg-slate-900">
+            <div className="relative bg-slate-900">
               <iframe
                 src={streetViewEmbedSrc!}
                 title="Street View"
@@ -140,22 +145,30 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
                 allowFullScreen
                 referrerPolicy="no-referrer-when-downgrade"
               />
+              {streetViewDetections.length > 0 && (
+                <div className="absolute top-2 right-2 bg-emerald-600/95 text-white text-[11px] font-medium px-2 py-1 rounded-full shadow">
+                  AI found {streetViewDetections.length} object{streetViewDetections.length === 1 ? "" : "s"}
+                </div>
+              )}
             </div>
           ) : (
             <div className="relative bg-slate-900">
               <img src={streetViewUrl!} alt="Street View" className="w-full block" />
+              {streetViewTile && streetViewDetections.map((d, i) => (
+                <BboxOverlay key={i} bbox={d.bbox_pixels} width={streetViewTile.width_px} height={streetViewTile.height_px} label={`${d.class} ${(d.confidence * 100).toFixed(0)}%`} />
+              ))}
             </div>
           )
         ) : view === "satellite" && showSatellite ? (
           <div className="relative bg-slate-900">
             <img src={satelliteUrl!} alt="Satellite" className="w-full block" />
-            {bbox && (
-              <div className="absolute border-2 border-emerald-400 pointer-events-none rounded-sm" style={{
-                left:   `${(bbox[0] / tile!.width_px) * 100}%`,
-                top:    `${(bbox[1] / tile!.height_px) * 100}%`,
-                width:  `${((bbox[2] - bbox[0]) / tile!.width_px) * 100}%`,
-                height: `${((bbox[3] - bbox[1]) / tile!.height_px) * 100}%`,
-              }} />
+            {satelliteDetections.map((d, i) => (
+              <BboxOverlay key={i} bbox={d.bbox_pixels} width={satelliteTile!.width_px} height={satelliteTile!.height_px} label={`${d.class} ${(d.confidence * 100).toFixed(0)}%`} />
+            ))}
+            {satelliteDetections.length > 0 && (
+              <div className="absolute top-2 right-2 bg-emerald-600/95 text-white text-[11px] font-medium px-2 py-1 rounded-full shadow">
+                {satelliteDetections.length} detection{satelliteDetections.length === 1 ? "" : "s"}
+              </div>
             )}
           </div>
         ) : (
@@ -322,6 +335,26 @@ function ExternalIcon() {
       <polyline points="15 3 21 3 21 9"/>
       <line x1="10" y1="14" x2="21" y2="3"/>
     </svg>
+  );
+}
+
+function BboxOverlay({ bbox, width, height, label }: { bbox: number[]; width: number; height: number; label: string }) {
+  if (bbox.length < 4) return null;
+  const [x1, y1, x2, y2] = bbox;
+  return (
+    <div
+      className="absolute border-2 border-emerald-400 pointer-events-none rounded-sm"
+      style={{
+        left:   `${(x1 / width) * 100}%`,
+        top:    `${(y1 / height) * 100}%`,
+        width:  `${((x2 - x1) / width) * 100}%`,
+        height: `${((y2 - y1) / height) * 100}%`,
+      }}
+    >
+      <span className="absolute -top-5 left-0 text-[10px] font-semibold text-emerald-100 bg-emerald-700/90 px-1.5 py-0.5 rounded whitespace-nowrap">
+        {label}
+      </span>
+    </div>
   );
 }
 
