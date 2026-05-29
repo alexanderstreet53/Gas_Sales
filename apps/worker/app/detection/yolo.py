@@ -1,10 +1,19 @@
 """YOLOv8 inference wrapper.
 
 Loads `settings.model_weights` once at import time, then exposes `detector.run`
-for the FastAPI handler. If the weights file is missing, we fall back to the
-pretrained `yolov8n.pt` so /detect still returns sensible (if generic) boxes
-before the user has fine-tuned anything — the goal is end-to-end smoke before
-training quality.
+for the FastAPI handler.
+
+The default weights shipped in the image are `yolov8n-obb.pt` — Ultralytics'
+model trained on DOTA, an aerial/satellite imagery dataset. Unlike the COCO
+`yolov8n.pt`, it actually detects things from a top-down view, and its class
+list includes `storage-tank`, `large-vehicle` and `small-vehicle` — directly
+useful for spotting gas infrastructure and the vehicles in a yard.
+
+Handles both:
+  * OBB models (DOTA) — results carry `.obb`, oriented boxes; we use the
+    axis-aligned enclosing box for storage in the existing [x1,y1,x2,y2] schema.
+  * Regular models (COCO, or a user's fine-tuned best.pt) — results carry
+    `.boxes`.
 """
 from __future__ import annotations
 
@@ -22,6 +31,8 @@ from app.config import settings
 
 log = logging.getLogger("worker.detection")
 
+DEFAULT_FALLBACK = "yolov8n-obb.pt"
+
 
 @dataclass(frozen=True)
 class Detection:
@@ -34,8 +45,8 @@ class Detector:
     def __init__(self, weights_path: str) -> None:
         path = Path(weights_path)
         if not path.exists():
-            log.warning("Weights %s missing — falling back to yolov8n.pt", weights_path)
-            self.model = YOLO("yolov8n.pt")
+            log.warning("Weights %s missing — falling back to %s", weights_path, DEFAULT_FALLBACK)
+            self.model = YOLO(DEFAULT_FALLBACK)
             self.is_finetuned = False
         else:
             self.model = YOLO(weights_path)
@@ -60,35 +71,54 @@ class Detector:
             verbose=False,
         )
         out: list[Detection] = []
-        names = results[0].names if results else {}
         for r in results:
-            boxes = r.boxes
-            if boxes is None:
+            names = r.names
+            # OBB (DOTA) results expose .obb; regular detection results expose .boxes.
+            obb = getattr(r, "obb", None)
+            if obb is not None and len(obb) > 0:
+                xyxy = obb.xyxy.cpu().numpy()      # axis-aligned enclosing box
+                confs = obb.conf.cpu().numpy()
+                cls_idx = obb.cls.cpu().numpy().astype(int)
+            elif r.boxes is not None and len(r.boxes) > 0:
+                xyxy = r.boxes.xyxy.cpu().numpy()
+                confs = r.boxes.conf.cpu().numpy()
+                cls_idx = r.boxes.cls.cpu().numpy().astype(int)
+            else:
                 continue
-            xyxy = boxes.xyxy.cpu().numpy()
-            confs = boxes.conf.cpu().numpy()
-            cls_idx = boxes.cls.cpu().numpy().astype(int)
+
             for i in range(len(xyxy)):
                 x1, y1, x2, y2 = xyxy[i].tolist()
-                label = names.get(int(cls_idx[i]), str(cls_idx[i]))
-                if not self.is_finetuned:
-                    # Map a few COCO classes onto our schema as a coarse smoke test.
-                    label = _coco_alias(label)
+                raw = names.get(int(cls_idx[i]), str(cls_idx[i]))
                 out.append(Detection(
-                    label=label,
+                    label=_alias(raw),
                     confidence=float(confs[i]),
                     bbox=(int(x1), int(y1), int(x2), int(y2)),
                 ))
         return out
 
 
-def _coco_alias(label: str) -> str:
-    # Until we fine-tune, surface anything tank-shaped to the reviewer.
+def _alias(label: str) -> str:
+    """Normalise model class names onto our schema.
+
+    Maps DOTA's aerial classes (and a couple of COCO ones) onto the labels the
+    rest of the app uses. Unknown labels (e.g. from a fine-tuned model that
+    already outputs `bulk_tank`) pass through unchanged.
+    """
+    key = label.lower().replace("_", "-").strip()
     return {
+        # DOTA (aerial) classes
+        "storage-tank":  "bulk_tank",
+        "small-vehicle": "car",
+        "large-vehicle": "truck",
+        "ship":          "ship",
+        "plane":         "plane",
+        # COCO fallbacks (if a COCO model is ever loaded)
         "bottle": "cylinder",
         "barrel": "bulk_tank",
         "vase":   "cylinder",
-    }.get(label, label)
+        "truck":  "truck",
+        "car":    "car",
+    }.get(key, label)
 
 
 detector = Detector(os.environ.get("MODEL_WEIGHTS", settings.model_weights))

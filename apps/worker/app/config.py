@@ -6,7 +6,7 @@ class Settings(BaseSettings):
 
     worker_api_key: str = "change-me-shared-secret"
     model_weights: str = "weights/best.pt"
-    model_version: str = "yolov8n-pretrained"
+    model_version: str = "yolov8n-obb-dota"
     supabase_url: str = ""
     supabase_service_role_key: str = ""
     log_level: str = "info"
