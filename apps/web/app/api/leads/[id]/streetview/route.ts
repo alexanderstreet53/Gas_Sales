@@ -11,12 +11,14 @@ import { fetchStreetViewTile } from "@/lib/imagery/google";
 import { callDetect } from "@/lib/worker";
 import { normalizePoint } from "@/lib/geo/parse";
 import { env } from "@/lib/env";
+import { makeDemoDetections, seedFromString, DEMO_MODEL_VERSION } from "@/lib/demo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const isDemo = new URL(req.url).searchParams.get("demo") === "1";
 
   if (!env.googleKey) {
     return NextResponse.json(
@@ -31,7 +33,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const sb = supabaseService();
   const { data: lead, error } = await sb
     .from("leads")
-    .select("id, zone_id, enrichment, sites(centroid)")
+    .select("id, zone_id, site_id, enrichment, sites(centroid)")
     .eq("id", id)
     .is("deleted_at", null)
     .maybeSingle();
@@ -66,14 +68,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     enrichment: { ...prior, streetview: { tile_id: tile.id, fetched_at: new Date().toISOString() } },
   }).eq("id", id);
 
-  // 2. If the worker is configured, also run YOLO on the panorama and
-  //    persist detections. Don't fail the scan if the worker is down —
-  //    the imagery is already cached and useful on its own.
+  // 2. Run AI on the panorama. Real or demo, depending on the flag.
+  //    Don't fail the scan if the worker is unreachable — the imagery
+  //    is already cached and useful on its own.
   let detected = 0;
   let detectionError: string | null = null;
-  if (env.workerUrl && !env.workerUrl.includes("localhost")) {
+  const workerConfigured = env.workerUrl && !env.workerUrl.includes("localhost");
+  const workerSkipped = !isDemo && !workerConfigured;
+
+  if (isDemo || workerConfigured) {
     try {
-      // Skip if we've already detected on this tile (dedupe by tile_id).
+      // Dedupe: skip if this tile already has detections from the same source.
       const { data: existing } = await sb
         .from("detections")
         .select("id", { count: "exact", head: true })
@@ -81,21 +86,34 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       const alreadyDetected = (existing as unknown as { count?: number } | null)?.count ?? 0;
 
       if (!alreadyDetected) {
-        const resp = await callDetect({
-          tileId: tile.id,
-          imageUrl: tile.signedUrl,
-          // For street-level imagery, lat/lng pixel projection isn't meaningful;
-          // we store every detection at the camera position regardless.
-          centerLat: point.lat,
-          centerLng: point.lng,
-          zoom: 19,
-          widthPx: tile.width_px,
-          heightPx: tile.height_px,
-        });
+        let resp;
+        if (isDemo) {
+          const demoBoxes = makeDemoDetections({
+            width: tile.width_px,
+            height: tile.height_px,
+            source: "streetview",
+            seed: seedFromString(tile.id),
+          });
+          resp = {
+            model_version: DEMO_MODEL_VERSION,
+            detections: demoBoxes.map(d => ({ ...d, lat: point.lat, lng: point.lng })),
+          };
+        } else {
+          resp = await callDetect({
+            tileId: tile.id,
+            imageUrl: tile.signedUrl,
+            centerLat: point.lat,
+            centerLng: point.lng,
+            zoom: 19,
+            widthPx: tile.width_px,
+            heightPx: tile.height_px,
+          });
+        }
 
         const rows = resp.detections.map(d => ({
           tile_id: tile.id,
           zone_id: lead.zone_id,
+          site_id: (lead as { site_id?: string | null }).site_id ?? null,
           class: d.class,
           confidence: d.confidence,
           bbox_pixels: d.bbox_pixels,
@@ -116,9 +134,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   return NextResponse.json({
     ok: true,
+    demo: isDemo,
     tileId: tile.id,
     detected,
     detectionError,
-    workerSkipped: !env.workerUrl || env.workerUrl.includes("localhost"),
+    workerSkipped,
   });
 }

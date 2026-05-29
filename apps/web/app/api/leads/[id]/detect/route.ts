@@ -9,6 +9,7 @@ import { tilePixelToLatLng, metresPerPixel } from "@/lib/geo/tiles";
 import { normalizePoint } from "@/lib/geo/parse";
 import { fetchSatelliteTile } from "@/lib/imagery/google";
 import { env } from "@/lib/env";
+import { makeDemoDetections, seedFromString, DEMO_MODEL_VERSION } from "@/lib/demo";
 
 interface TileForDetect {
   id: string;
@@ -22,12 +23,14 @@ interface TileForDetect {
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const url = new URL(req.url);
+  const isDemo = url.searchParams.get("demo") === "1";
   const { id } = await params;
 
-  if (!env.workerUrl || env.workerUrl.includes("localhost")) {
+  if (!isDemo && (!env.workerUrl || env.workerUrl.includes("localhost"))) {
     return NextResponse.json(
-      { error: "worker_not_configured", message: "WORKER_URL is not set in Vercel. Deploy the worker and set WORKER_URL + WORKER_API_KEY first." },
+      { error: "worker_not_configured", message: "WORKER_URL is not set in Vercel. Deploy the worker and set WORKER_URL + WORKER_API_KEY first, or toggle Demo mode to bypass the worker." },
       { status: 400 },
     );
   }
@@ -138,17 +141,35 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   let detectResp;
   try {
-    detectResp = await callDetect({
-      tileId: best.id,
-      imageUrl: signed.data.signedUrl,
-      centerLat: bestPoint.lat,
-      centerLng: bestPoint.lng,
-      zoom: best.z ?? 19,
-      widthPx: best.width_px,
-      heightPx: best.height_px,
-    });
+    if (isDemo) {
+      const demoBoxes = makeDemoDetections({
+        width: best.width_px,
+        height: best.height_px,
+        source: "satellite",
+        seed: seedFromString(best.id),
+      });
+      detectResp = {
+        model_version: DEMO_MODEL_VERSION,
+        detections: demoBoxes.map(d => ({ ...d, lat: bestPoint!.lat, lng: bestPoint!.lng })),
+      };
+    } else {
+      detectResp = await callDetect({
+        tileId: best.id,
+        imageUrl: signed.data.signedUrl,
+        centerLat: bestPoint.lat,
+        centerLng: bestPoint.lng,
+        zoom: best.z ?? 19,
+        widthPx: best.width_px,
+        heightPx: best.height_px,
+      });
+    }
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    const msg = (e as Error).message;
+    return NextResponse.json({
+      error: "worker_unreachable",
+      message: `Couldn't reach the worker at ${env.workerUrl}. It may be cold-starting (wait ~60s and retry), asleep, or the URL is wrong. Check ${env.workerUrl}/healthz in a browser. Or toggle Demo mode to bypass the worker.`,
+      detail: msg,
+    }, { status: 502 });
   }
 
   // 5. Persist detections (skip duplicates already on this tile).
@@ -186,6 +207,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   return NextResponse.json({
     ok: true,
+    demo: isDemo,
     tileId: best.id,
     fetchedNewTile: fetchedTile,
     tileDistanceM: fetchedTile ? 0 : Math.round(bestDist),
