@@ -16,11 +16,12 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY app ./app
 
-# Download pretrained YOLOv8n at build time so the worker boots fast and
-# the repo doesn't need a committed weights file. Drop a fine-tuned
+# Download an aerial-trained model (DOTA-trained yolov8n-obb) at build
+# time. Far better than COCO for top-down tiles; classes include
+# storage-tank / large-vehicle / small-vehicle. Drop a fine-tuned
 # best.pt into weights/ later to override.
 RUN mkdir -p weights && \
-    curl -fSL https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n.pt \
+    curl -fSL https://github.com/ultralytics/assets/releases/download/v8.3.0/yolov8n-obb.pt \
       -o weights/best.pt
 
 RUN pip install --upgrade pip && pip install .
