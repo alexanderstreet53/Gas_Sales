@@ -22,12 +22,13 @@ interface Props {
   } | null;
   satelliteUrl: string | null;
   streetViewUrl: string | null;
+  streetViewEmbedSrc: string | null;
   latLng: { lat: number; lng: number } | null;
 }
 
 type View = "street" | "satellite";
 
-export default function LeadDetail({ lead, topDetection, satelliteUrl, streetViewUrl, latLng }: Props) {
+export default function LeadDetail({ lead, topDetection, satelliteUrl, streetViewUrl, streetViewEmbedSrc, latLng }: Props) {
   const [status, setStatus] = useState<LeadStatus>(lead.status);
   const [notes, setNotes] = useState(lead.notes ?? "");
   const [name, setName] = useState(lead.business_name ?? "");
@@ -35,12 +36,17 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
   const [savedFlash, setSavedFlash] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanResult, setScanResult] = useState<string | null>(null);
   const [detecting, setDetecting] = useState(false);
   const [detectResult, setDetectResult] = useState<string | null>(null);
   const [detectError, setDetectError] = useState<string | null>(null);
 
-  // Default to whichever view we actually have imagery for.
-  const initialView: View = streetViewUrl ? "street" : "satellite";
+  // Default to whichever view we actually have imagery for. Interactive
+  // embed wins over the cached static snapshot when both are available.
+  const hasInteractiveStreet = !!streetViewEmbedSrc;
+  const hasStaticStreet = !!streetViewUrl;
+  const showStreet = hasInteractiveStreet || hasStaticStreet;
+  const initialView: View = showStreet ? "street" : "satellite";
   const [view, setView] = useState<View>(initialView);
 
   async function save() {
@@ -55,13 +61,24 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
   }
 
   async function scanStreetView() {
-    setScanning(true); setScanError(null);
+    setScanning(true); setScanError(null); setScanResult(null);
     try {
       const res = await fetch(`/api/leads/${lead.id}/streetview`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) { setScanError(json.message ?? json.error ?? "Scan failed"); return; }
-      // New tile is in the DB; refresh to pick it up.
-      window.location.reload();
+      const parts: string[] = ["Street View fetched"];
+      if (json.workerSkipped) {
+        parts.push("(AI skipped — WORKER_URL not set)");
+      } else if (json.detected > 0) {
+        parts.push(`+ ${json.detected} detection${json.detected === 1 ? "" : "s"} from AI`);
+      } else if (json.detectionError) {
+        parts.push(`(AI failed: ${json.detectionError})`);
+      } else {
+        parts.push("+ 0 detections from AI");
+      }
+      setScanResult(parts.join(" "));
+      // Give the user a moment to see the result, then refresh.
+      setTimeout(() => window.location.reload(), 1800);
     } catch (e) {
       setScanError((e as Error).message);
     } finally {
@@ -98,7 +115,6 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
     : null;
 
   const showSatellite = satelliteUrl && tile;
-  const showStreet = !!streetViewUrl;
   const showTabs = showSatellite && showStreet;
 
   return (
@@ -113,9 +129,23 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
         )}
 
         {view === "street" && showStreet ? (
-          <div className="relative bg-slate-900">
-            <img src={streetViewUrl!} alt="Street View" className="w-full block" />
-          </div>
+          hasInteractiveStreet ? (
+            <div className="bg-slate-900">
+              <iframe
+                src={streetViewEmbedSrc!}
+                title="Street View"
+                className="w-full block border-0"
+                style={{ aspectRatio: "16 / 10" }}
+                loading="lazy"
+                allowFullScreen
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            </div>
+          ) : (
+            <div className="relative bg-slate-900">
+              <img src={streetViewUrl!} alt="Street View" className="w-full block" />
+            </div>
+          )
         ) : view === "satellite" && showSatellite ? (
           <div className="relative bg-slate-900">
             <img src={satelliteUrl!} alt="Satellite" className="w-full block" />
@@ -163,9 +193,10 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
               {scanError ?? detectError}
             </div>
           )}
-          {detectResult && (
-            <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
-              {detectResult}
+          {(scanResult || detectResult) && (
+            <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2 space-y-0.5">
+              {scanResult && <div>{scanResult}</div>}
+              {detectResult && <div>{detectResult}</div>}
             </div>
           )}
         </section>

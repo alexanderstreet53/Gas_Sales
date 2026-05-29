@@ -64,12 +64,21 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
   const site = Array.isArray(siteShape) ? siteShape[0] : siteShape;
   const latLng = normalizePoint(site?.centroid);
 
+  // Interactive 360 Street View via the Maps Embed API (separate from
+  // Street View Static used for caching). The key ends up in the iframe
+  // src — restrict it by HTTP referrer on the Google side.
+  const googleKey = process.env.GOOGLE_MAPS_API_KEY ?? "";
+  const streetViewEmbedSrc = (googleKey && latLng)
+    ? `https://www.google.com/maps/embed/v1/streetview?key=${googleKey}&location=${latLng.lat},${latLng.lng}&heading=0&pitch=0&fov=90`
+    : null;
+
   return (
     <LeadDetail
       lead={lead}
       topDetection={topDetectionForView}
       satelliteUrl={satelliteUrl}
       streetViewUrl={streetViewUrl}
+      streetViewEmbedSrc={streetViewEmbedSrc}
       latLng={latLng}
     />
   );

@@ -7,7 +7,17 @@ import { supabaseService } from "@/lib/supabase/server";
 import { callDetect } from "@/lib/worker";
 import { tilePixelToLatLng, metresPerPixel } from "@/lib/geo/tiles";
 import { normalizePoint } from "@/lib/geo/parse";
+import { fetchSatelliteTile } from "@/lib/imagery/google";
 import { env } from "@/lib/env";
+
+interface TileForDetect {
+  id: string;
+  zone_id: string | null;
+  storage_path: string;
+  width_px: number;
+  height_px: number;
+  z: number | null;
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -59,7 +69,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
 
   // 3. Pick the tile whose centre is closest to the lead (great-circle approx).
-  let best: typeof tiles[number] | null = null;
+  let best: TileForDetect | null = null;
   let bestPoint: { lat: number; lng: number } | null = null;
   let bestDist = Infinity;
   for (const t of tiles) {
@@ -68,23 +78,59 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     const dy = (p.lat - leadPoint.lat) * 111_320;
     const dx = (p.lng - leadPoint.lng) * 111_320 * Math.cos((leadPoint.lat * Math.PI) / 180);
     const dist = Math.hypot(dx, dy);
-    if (dist < bestDist) { bestDist = dist; best = t; bestPoint = p; }
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = {
+        id: t.id, zone_id: t.zone_id, storage_path: t.storage_path,
+        width_px: t.width_px, height_px: t.height_px, z: t.z,
+      };
+      bestPoint = p;
+    }
   }
+
+  // If no cached tile actually covers the lead, fetch one centred on it.
+  // ~$0.002 per fetch via the same caching layer the imagery sweep uses.
+  const tileCovers = (() => {
+    if (!best || !bestPoint) return false;
+    const mPerPx = metresPerPixel(bestPoint.lat, best.z ?? 19);
+    const tileRadiusM = (Math.max(best.width_px, best.height_px) / 2) * mPerPx;
+    return bestDist <= tileRadiusM * 1.1;
+  })();
+
+  let fetchedTile = false;
+  if (!tileCovers) {
+    if (!env.googleKey) {
+      return NextResponse.json({
+        error: "lead_outside_cached_tiles",
+        message: `Nearest cached tile is ${(bestDist / 1000).toFixed(2)} km away. Set GOOGLE_MAPS_API_KEY so I can fetch a fresh satellite tile here, or run an imagery sweep over this area.`,
+      }, { status: 400 });
+    }
+    try {
+      const fresh = await fetchSatelliteTile({
+        zoneId: lead.zone_id as string,
+        centerLat: leadPoint.lat,
+        centerLng: leadPoint.lng,
+        zoom: 19,
+      });
+      best = {
+        id: fresh.id, zone_id: lead.zone_id as string, storage_path: fresh.storage_path,
+        width_px: fresh.width_px, height_px: fresh.height_px, z: 19,
+      };
+      bestPoint = { lat: leadPoint.lat, lng: leadPoint.lng };
+      fetchedTile = true;
+    } catch (e) {
+      return NextResponse.json(
+        { error: "tile_fetch_failed", message: (e as Error).message },
+        { status: 500 },
+      );
+    }
+  }
+
   if (!best || !bestPoint) {
     return NextResponse.json({ error: "no_tile_match" }, { status: 500 });
   }
 
-  // Sanity: tile should actually cover the lead, not be 5km away.
-  const mPerPx = metresPerPixel(bestPoint.lat, best.z ?? 19);
-  const tileRadiusM = (Math.max(best.width_px, best.height_px) / 2) * mPerPx;
-  if (bestDist > tileRadiusM * 1.5) {
-    return NextResponse.json({
-      error: "lead_outside_cached_tiles",
-      message: `The closest cached tile is ${(bestDist / 1000).toFixed(2)} km from this lead. Run an imagery sweep that covers this area.`,
-    }, { status: 400 });
-  }
-
-  // 4. Call the worker on that tile.
+  // 4. Call the worker on whichever tile we ended up with.
   const signed = await sb.storage.from("imagery").createSignedUrl(best.storage_path, 60 * 60);
   if (signed.error || !signed.data?.signedUrl) {
     return NextResponse.json({ error: "signed_url_failed" }, { status: 500 });
@@ -140,7 +186,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   return NextResponse.json({
     ok: true,
     tileId: best.id,
-    tileDistanceM: Math.round(bestDist),
+    fetchedNewTile: fetchedTile,
+    tileDistanceM: fetchedTile ? 0 : Math.round(bestDist),
     detectionsFound: detectResp.detections.length,
     newlyInserted: newRows.length,
     duplicates: detectResp.detections.length - newRows.length,
