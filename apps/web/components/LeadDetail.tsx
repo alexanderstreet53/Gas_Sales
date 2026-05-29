@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import StatusPill from "@/components/StatusPill";
 import type { LeadStatus } from "@/lib/types";
+
+const DEMO_STORAGE_KEY = "gt:demo-mode";
 
 interface Detection { class: string; confidence: number; bbox_pixels: number[] }
 
@@ -48,6 +50,19 @@ export default function LeadDetail({
   const [detecting, setDetecting] = useState(false);
   const [detectResult, setDetectResult] = useState<string | null>(null);
   const [detectError, setDetectError] = useState<string | null>(null);
+  const [demoMode, setDemoMode] = useState(false);
+
+  // Persist demo toggle across page navigations and lead changes.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setDemoMode(window.localStorage.getItem(DEMO_STORAGE_KEY) === "1");
+  }, []);
+  function toggleDemo() {
+    const next = !demoMode;
+    setDemoMode(next);
+    try { window.localStorage.setItem(DEMO_STORAGE_KEY, next ? "1" : "0"); } catch {}
+  }
+  const demoQuery = demoMode ? "?demo=1" : "";
 
   // Default to whichever view we actually have imagery for. Interactive
   // embed wins over the cached static snapshot when both are available.
@@ -71,7 +86,7 @@ export default function LeadDetail({
   async function scanStreetView() {
     setScanning(true); setScanError(null); setScanResult(null);
     try {
-      const res = await fetch(`/api/leads/${lead.id}/streetview`, { method: "POST" });
+      const res = await fetch(`/api/leads/${lead.id}/streetview${demoQuery}`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) { setScanError(json.message ?? json.error ?? "Scan failed"); return; }
       const parts: string[] = ["Street View fetched"];
@@ -97,11 +112,11 @@ export default function LeadDetail({
   async function detectHere() {
     setDetecting(true); setDetectError(null); setDetectResult(null);
     try {
-      const res = await fetch(`/api/leads/${lead.id}/detect`, { method: "POST" });
+      const res = await fetch(`/api/leads/${lead.id}/detect${demoQuery}`, { method: "POST" });
       const json = await res.json();
       if (!res.ok) { setDetectError(json.message ?? json.error ?? "Detection failed"); return; }
       setDetectResult(
-        `${json.detectionsFound} detection${json.detectionsFound === 1 ? "" : "s"} on the tile covering this lead` +
+        `${json.demo ? "[demo] " : ""}${json.detectionsFound} detection${json.detectionsFound === 1 ? "" : "s"} on the tile covering this lead` +
         (json.duplicates ? ` (${json.duplicates} duplicate)` : ""),
       );
       setTimeout(() => window.location.reload(), 1500);
@@ -183,11 +198,27 @@ export default function LeadDetail({
       {/* Per-lead scan tools */}
       {latLng && (
         <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
-          <div>
-            <h2 className="font-medium text-sm">Scan this lead</h2>
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Run just this one premises instead of the whole zone. Cache hits are free.
-            </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-medium text-sm">Scan this lead</h2>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Run just this one premises instead of the whole zone. Cache hits are free.
+              </p>
+            </div>
+            <button
+              onClick={toggleDemo}
+              role="switch"
+              aria-checked={demoMode}
+              className={`flex-shrink-0 inline-flex items-center gap-2 text-[11px] font-semibold px-2.5 py-1.5 rounded-full border transition-colors ${
+                demoMode
+                  ? "bg-amber-100 text-amber-900 border-amber-300"
+                  : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+              }`}
+              title="Demo mode: generates plausible fake detections instead of calling the worker. Use for sales demos before the model is fine-tuned."
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${demoMode ? "bg-amber-500" : "bg-slate-300"}`} />
+              Demo mode {demoMode ? "ON" : "OFF"}
+            </button>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
             <button onClick={scanStreetView} disabled={scanning}
