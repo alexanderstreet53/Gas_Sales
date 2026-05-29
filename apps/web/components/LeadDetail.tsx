@@ -72,6 +72,13 @@ export default function LeadDetail({
   const initialView: View = showStreet ? "street" : "satellite";
   const [view, setView] = useState<View>(initialView);
 
+  // Within the Street View tab, the user can flip between the interactive
+  // 360 iframe (browsing) and the static image (where detection boxes can
+  // be drawn). Default to "static" if there are detections to show.
+  const [streetMode, setStreetMode] = useState<"static" | "interactive">(
+    streetViewDetections.length > 0 && hasStaticStreet ? "static" : "interactive",
+  );
+
   async function save() {
     setSaving(true);
     await fetch(`/api/leads/${lead.id}`, {
@@ -149,8 +156,8 @@ export default function LeadDetail({
         )}
 
         {view === "street" && showStreet ? (
-          hasInteractiveStreet ? (
-            <div className="relative bg-slate-900">
+          <div className="relative bg-slate-900">
+            {streetMode === "interactive" && hasInteractiveStreet ? (
               <iframe
                 src={streetViewEmbedSrc!}
                 title="Street View"
@@ -160,20 +167,41 @@ export default function LeadDetail({
                 allowFullScreen
                 referrerPolicy="no-referrer-when-downgrade"
               />
-              {streetViewDetections.length > 0 && (
-                <div className="absolute top-2 right-2 bg-emerald-600/95 text-white text-[11px] font-medium px-2 py-1 rounded-full shadow">
-                  AI found {streetViewDetections.length} object{streetViewDetections.length === 1 ? "" : "s"}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="relative bg-slate-900">
-              <img src={streetViewUrl!} alt="Street View" className="w-full block" />
-              {streetViewTile && streetViewDetections.map((d, i) => (
-                <BboxOverlay key={i} bbox={d.bbox_pixels} width={streetViewTile.width_px} height={streetViewTile.height_px} label={`${d.class} ${(d.confidence * 100).toFixed(0)}%`} />
-              ))}
-            </div>
-          )
+            ) : hasStaticStreet ? (
+              <>
+                <img src={streetViewUrl!} alt="Street View" className="w-full block" />
+                {streetViewTile && streetViewDetections.map((d, i) => (
+                  <BboxOverlay key={i} bbox={d.bbox_pixels} width={streetViewTile.width_px} height={streetViewTile.height_px} label={`${d.class} ${(d.confidence * 100).toFixed(0)}%`} />
+                ))}
+              </>
+            ) : (
+              // Edge: interactive available but no cached static — fall back to iframe.
+              <iframe
+                src={streetViewEmbedSrc!}
+                title="Street View"
+                className="w-full block border-0"
+                style={{ aspectRatio: "16 / 10" }}
+                loading="lazy"
+                allowFullScreen
+                referrerPolicy="no-referrer-when-downgrade"
+              />
+            )}
+
+            {/* Toggle + detection count overlays */}
+            {hasInteractiveStreet && hasStaticStreet && (
+              <button
+                onClick={() => setStreetMode(m => m === "interactive" ? "static" : "interactive")}
+                className="absolute top-2 left-2 text-[11px] font-medium px-2.5 py-1 rounded-full bg-white/95 text-ink shadow hover:bg-white transition-colors"
+              >
+                {streetMode === "interactive" ? "Show detections" : "View 360"}
+              </button>
+            )}
+            {streetViewDetections.length > 0 && (
+              <div className="absolute top-2 right-2 bg-emerald-600/95 text-white text-[11px] font-medium px-2 py-1 rounded-full shadow">
+                {streetViewDetections.length} detection{streetViewDetections.length === 1 ? "" : "s"}
+              </div>
+            )}
+          </div>
         ) : view === "satellite" && showSatellite ? (
           <div className="relative bg-slate-900">
             <img src={satelliteUrl!} alt="Satellite" className="w-full block" />
