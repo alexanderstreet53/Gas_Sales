@@ -1,30 +1,35 @@
-app = "gas-tank-worker"
-primary_region = "lhr"
-kill_signal = "SIGINT"
-kill_timeout = "10s"
+# fly.toml app configuration file generated for gas-sales on 2026-05-29T15:35:05Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'gas-sales'
+primary_region = 'lhr'
+kill_signal = 'SIGINT'
+kill_timeout = '10s'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  MODEL_WEIGHTS = "weights/best.pt"
-  MODEL_VERSION = "yolov8n-obb-dota"
+  MODEL_VERSION = 'yolov8n-obb-dota'
+  MODEL_WEIGHTS = 'weights/best.pt'
 
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
-  processes = ["app"]
+  processes = ['app']
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "30s"
-    method = "GET"
-    path = "/healthz"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'GET'
+    path = '/healthz'
 
 [[vm]]
-  size = "performance-2x"
-  memory = "4096"
+  size = 'performance-2x'
+  memory = '4096'
