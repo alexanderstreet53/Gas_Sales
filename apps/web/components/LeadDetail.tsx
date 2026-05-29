@@ -33,6 +33,11 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
   const [name, setName] = useState(lead.business_name ?? "");
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [detecting, setDetecting] = useState(false);
+  const [detectResult, setDetectResult] = useState<string | null>(null);
+  const [detectError, setDetectError] = useState<string | null>(null);
 
   // Default to whichever view we actually have imagery for.
   const initialView: View = streetViewUrl ? "street" : "satellite";
@@ -47,6 +52,39 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
     setSaving(false);
     setSavedFlash(true);
     setTimeout(() => setSavedFlash(false), 1500);
+  }
+
+  async function scanStreetView() {
+    setScanning(true); setScanError(null);
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/streetview`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) { setScanError(json.message ?? json.error ?? "Scan failed"); return; }
+      // New tile is in the DB; refresh to pick it up.
+      window.location.reload();
+    } catch (e) {
+      setScanError((e as Error).message);
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  async function detectHere() {
+    setDetecting(true); setDetectError(null); setDetectResult(null);
+    try {
+      const res = await fetch(`/api/leads/${lead.id}/detect`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) { setDetectError(json.message ?? json.error ?? "Detection failed"); return; }
+      setDetectResult(
+        `${json.detectionsFound} detection${json.detectionsFound === 1 ? "" : "s"} on the tile covering this lead` +
+        (json.duplicates ? ` (${json.duplicates} duplicate)` : ""),
+      );
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e) {
+      setDetectError((e as Error).message);
+    } finally {
+      setDetecting(false);
+    }
   }
 
   const tile = topDetection?.imagery_tiles;
@@ -94,10 +132,44 @@ export default function LeadDetail({ lead, topDetection, satelliteUrl, streetVie
           <div className="aspect-[4/3] sm:aspect-[16/9] flex flex-col items-center justify-center gap-2 text-sm text-slate-500 p-6 text-center">
             <NoImageIcon />
             <div>No imagery yet.</div>
-            <div className="text-xs">Run a Street View scan from the dashboard to fetch one.</div>
+            <div className="text-xs">Use the buttons below to fetch.</div>
           </div>
         )}
       </section>
+
+      {/* Per-lead scan tools */}
+      {latLng && (
+        <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 space-y-3">
+          <div>
+            <h2 className="font-medium text-sm">Scan this lead</h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Run just this one premises instead of the whole zone. Cache hits are free.
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <button onClick={scanStreetView} disabled={scanning}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-white border border-slate-200 text-ink px-4 py-2.5 text-sm font-medium hover:bg-slate-50 disabled:opacity-50 transition-colors">
+              <EyeIcon className={scanning ? "animate-pulse" : ""} />
+              {scanning ? "Scanning…" : streetViewUrl ? "Re-scan Street View" : "Scan Street View"}
+            </button>
+            <button onClick={detectHere} disabled={detecting}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent text-white px-4 py-2.5 text-sm font-medium hover:bg-accent/90 disabled:opacity-50 transition-colors shadow-sm">
+              <TargetIcon className={detecting ? "animate-pulse" : ""} />
+              {detecting ? "Detecting…" : "Detect on satellite tile"}
+            </button>
+          </div>
+          {(scanError || detectError) && (
+            <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+              {scanError ?? detectError}
+            </div>
+          )}
+          {detectResult && (
+            <div className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
+              {detectResult}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Header card */}
       <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
@@ -229,6 +301,27 @@ function NoImageIcon() {
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <circle cx="9" cy="9" r="1.5"/>
       <path d="m21 15-5-5L5 21"/>
+    </svg>
+  );
+}
+
+function EyeIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+      <circle cx="12" cy="12" r="3"/>
+    </svg>
+  );
+}
+
+function TargetIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="12" cy="12" r="10"/>
+      <circle cx="12" cy="12" r="6"/>
+      <circle cx="12" cy="12" r="2"/>
     </svg>
   );
 }
