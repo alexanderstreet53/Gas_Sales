@@ -1,0 +1,16 @@
+# Keep the Fly build context small. We only COPY apps/worker/** anyway.
+.git
+node_modules
+**/node_modules
+.next
+**/.next
+apps/web
+legacy
+docs
+supabase
+**/__pycache__
+**/*.pyc
+.venv
+**/.venv
+*.log
+.vercel
