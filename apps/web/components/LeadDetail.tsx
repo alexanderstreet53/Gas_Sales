@@ -19,6 +19,15 @@ interface StreetShot {
   detections: Detection[];
 }
 
+interface TankEstimate {
+  type: string;
+  typeLabel: string;
+  symbol: string;
+  estimatedSizeL: number;
+  confidence: number;
+  demo?: boolean;
+}
+
 interface Props {
   lead: {
     id: string;
@@ -36,6 +45,7 @@ interface Props {
   streetShots: StreetShot[];
   streetViewEmbedSrc: string | null;
   latLng: { lat: number; lng: number } | null;
+  tankEstimate: TankEstimate | null;
 }
 
 type View = "street" | "satellite";
@@ -44,6 +54,7 @@ export default function LeadDetail({
   lead,
   satelliteUrl, satelliteTile, satelliteDetections,
   streetShots, streetViewEmbedSrc, latLng,
+  tankEstimate,
 }: Props) {
   const router = useRouter();
   const [status, setStatus] = useState<LeadStatus>(lead.status);
@@ -157,8 +168,61 @@ export default function LeadDetail({
   const showSatellite = !!(satelliteUrl && satelliteTile);
   const showTabs = showSatellite && showStreet;
 
+  const nothingScannedYet = !satelliteUrl && streetShots.length === 0;
+
   return (
     <div className="space-y-4 pb-24 md:pb-0">
+      {nothingScannedYet && latLng && (
+        <section className="rounded-2xl bg-gradient-to-br from-ink to-slate-800 text-white p-5 shadow-lg">
+          <div className="text-[11px] uppercase tracking-wide text-slate-300">This lead hasn&apos;t been scanned yet</div>
+          <h2 className="text-lg sm:text-xl font-semibold mt-1">Want to scan {lead.business_name ?? "this lead"}?</h2>
+          <p className="text-xs sm:text-sm text-slate-300 mt-1 max-w-xl">
+            Pulls a Street View panorama (4 angles) and runs detection on the satellite tile covering the address. ~$0.03 total. Cache hits are free.
+          </p>
+          <div className="mt-4 flex flex-col sm:flex-row gap-2">
+            <button onClick={scanStreetView} disabled={scanning}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-white text-ink px-4 py-2.5 text-sm font-semibold hover:bg-slate-100 disabled:opacity-50">
+              <EyeIcon className={scanning ? "animate-pulse" : ""} />
+              {scanning ? "Scanning…" : "Scan Street View (4 angles)"}
+            </button>
+            <button onClick={detectHere} disabled={detecting}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-accent text-white px-4 py-2.5 text-sm font-semibold hover:bg-accent/90 disabled:opacity-50">
+              <TargetIcon className={detecting ? "animate-pulse" : ""} />
+              {detecting ? "Detecting…" : "Detect on satellite"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {tankEstimate && (
+        <section className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-slate-500 flex items-center gap-1.5">
+                Tank type estimate {tankEstimate.demo && <span className="text-[10px] font-semibold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">DEMO</span>}
+              </div>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-2xl font-semibold">{tankEstimate.symbol}</span>
+                <span className="text-base sm:text-lg font-medium text-slate-700">{tankEstimate.typeLabel}</span>
+              </div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                Estimated size: <span className="font-medium text-slate-700">~{tankEstimate.estimatedSizeL.toLocaleString()} L</span>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[11px] uppercase tracking-wide text-slate-500">Confidence</div>
+              <div className={`text-xl font-semibold tabular-nums mt-1 ${
+                tankEstimate.confidence >= 0.7 ? "text-emerald-600"
+                : tankEstimate.confidence >= 0.5 ? "text-amber-600"
+                : "text-slate-500"
+              }`}>
+                {(tankEstimate.confidence * 100).toFixed(0)}%
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Imagery preview */}
       <section className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         {showTabs && (
@@ -176,7 +240,7 @@ export default function LeadDetail({
                   src={streetViewEmbedSrc!}
                   title="Street View"
                   className="w-full block border-0"
-                  style={{ aspectRatio: "16 / 10" }}
+                  style={{ aspectRatio: "16 / 8" }}
                   loading="lazy"
                   allowFullScreen
                   referrerPolicy="no-referrer-when-downgrade"
@@ -193,7 +257,7 @@ export default function LeadDetail({
                   src={streetViewEmbedSrc!}
                   title="Street View"
                   className="w-full block border-0"
-                  style={{ aspectRatio: "16 / 10" }}
+                  style={{ aspectRatio: "16 / 8" }}
                   loading="lazy"
                   allowFullScreen
                   referrerPolicy="no-referrer-when-downgrade"
