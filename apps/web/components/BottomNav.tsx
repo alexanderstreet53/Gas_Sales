@@ -6,11 +6,11 @@ import { usePathname } from "next/navigation";
 interface Item { href: string; label: string; icon: (active: boolean) => React.ReactNode }
 
 const ITEMS: Item[] = [
-  { href: "/",       label: "Home",   icon: a => <HomeIcon active={a} /> },
-  { href: "/zones",  label: "Zones",  icon: a => <MapIcon active={a} /> },
-  { href: "/leads",  label: "Leads",  icon: a => <UsersIcon active={a} /> },
-  { href: "/review", label: "Verify", icon: a => <CheckIcon active={a} /> },
-  { href: "/spend",  label: "Spend",  icon: a => <ChartIcon active={a} /> },
+  { href: "/",         label: "Map",      icon: a => <MapIcon active={a} /> },
+  { href: "/pipeline", label: "Pipeline", icon: a => <ChartIcon active={a} /> },
+  { href: "/leads",    label: "Leads",    icon: a => <UsersIcon active={a} /> },
+  { href: "/review",   label: "Verify",   icon: a => <CheckIcon active={a} /> },
+  { href: "/zones",    label: "Zones",    icon: a => <HomeIcon active={a} /> },
 ];
 
 export default function BottomNav() {

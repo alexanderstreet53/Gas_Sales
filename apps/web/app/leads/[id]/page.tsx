@@ -120,6 +120,12 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
     ? `https://www.google.com/maps/embed/v1/streetview?key=${googleKey}&location=${latLng.lat},${latLng.lng}&heading=0&pitch=0&fov=90`
     : null;
 
+  // Tank-type estimate (stamped on enrichment by demo-mode detect).
+  const tankEstimate = (enrichment.tank_type as {
+    type: string; typeLabel: string; symbol: string;
+    estimatedSizeL: number; confidence: number; demo?: boolean;
+  } | undefined) ?? null;
+
   return (
     <LeadDetail
       lead={lead}
@@ -129,6 +135,7 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
       streetShots={streetShots}
       streetViewEmbedSrc={streetViewEmbedSrc}
       latLng={latLng}
+      tankEstimate={tankEstimate}
     />
   );
 }

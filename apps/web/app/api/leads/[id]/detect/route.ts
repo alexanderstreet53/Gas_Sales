@@ -10,6 +10,7 @@ import { normalizePoint } from "@/lib/geo/parse";
 import { fetchSatelliteTile } from "@/lib/imagery/google";
 import { env } from "@/lib/env";
 import { makeDemoDetections, seedFromString, DEMO_MODEL_VERSION } from "@/lib/demo";
+import { makeDemoTank } from "@/lib/tank-type";
 
 interface TileForDetect {
   id: string;
@@ -203,6 +204,23 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (newRows.length > 0) {
     const { error: insErr } = await sb.from("detections").insert(newRows);
     if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 });
+  }
+
+  // In demo mode, also stamp a deterministic tank-type guess on the lead
+  // so the funnel can advance to the "Type identified" stage and the lead
+  // detail page can show oxygen/argon/etc + estimated size.
+  if (isDemo) {
+    // Look up business_type for the bias.
+    const { data: leadFull } = await sb
+      .from("leads")
+      .select("business_type, enrichment")
+      .eq("id", id)
+      .maybeSingle();
+    const prior = (leadFull?.enrichment as Record<string, unknown> | null) ?? {};
+    const tank = makeDemoTank(id, leadFull?.business_type as string | null);
+    await sb.from("leads").update({
+      enrichment: { ...prior, tank_type: tank },
+    }).eq("id", id);
   }
 
   return NextResponse.json({

@@ -16,12 +16,13 @@ export const viewport: Viewport = {
 };
 
 const NAV = [
-  { href: "/",        label: "Dashboard" },
-  { href: "/zones",   label: "Zones" },
-  { href: "/leads",   label: "Leads" },
-  { href: "/review",  label: "Verify" },
-  { href: "/label",   label: "Labelling" },
-  { href: "/spend",   label: "Spend" },
+  { href: "/",         label: "Map" },
+  { href: "/pipeline", label: "Pipeline" },
+  { href: "/zones",    label: "Zones" },
+  { href: "/leads",    label: "Leads" },
+  { href: "/review",   label: "Verify" },
+  { href: "/label",    label: "Labelling" },
+  { href: "/spend",    label: "Spend" },
 ] as const;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

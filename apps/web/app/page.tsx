@@ -1,68 +1,105 @@
 import Link from "next/link";
 import { supabaseService } from "@/lib/supabase/server";
+import UkMap from "@/components/UkMap";
 import StatusPill from "@/components/StatusPill";
-import DataSourcesPanel from "@/components/DataSourcesPanel";
 import type { LeadStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-interface DashboardData {
-  zones: number;
-  tiles: number;
-  detections: number;
-  unreviewed: number;
-  leads: number;
-  spend24h: number;
-  recentLeads: {
-    id: string;
-    business_name: string | null;
-    formatted_addr: string | null;
-    confidence: number;
-    status: LeadStatus;
-    updated_at: string;
-    zones: { name: string } | null;
-  }[];
-  statusCounts: Record<LeadStatus, number>;
+interface ZoneRow {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  boundary: { type: "Polygon"; coordinates: number[][][] } | null;
 }
 
-async function load(): Promise<DashboardData | null> {
+interface ZoneWithStats {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  boundary: ZoneRow["boundary"];
+  leads: number;
+  detections: number;
+  verified: number;
+  contacted: number;
+  converted: number;
+}
+
+interface RecentLead {
+  id: string;
+  business_name: string | null;
+  formatted_addr: string | null;
+  confidence: number;
+  status: LeadStatus;
+  zones: { name: string } | null;
+}
+
+async function load(): Promise<{
+  zones: ZoneWithStats[];
+  totals: { leads: number; verified: number; contacted: number; converted: number; detections: number };
+  recent: RecentLead[];
+} | null> {
   try {
     const sb = supabaseService();
-    const since24h = new Date(Date.now() - 86_400_000).toISOString();
-    const [zones, tiles, detections, unreviewed, leadsCount, spend24h, recent, statusBreakdown] = await Promise.all([
-      sb.from("zones").select("id", { count: "exact", head: true }).is("deleted_at", null),
-      sb.from("imagery_tiles").select("id", { count: "exact", head: true }),
-      sb.from("detections").select("id", { count: "exact", head: true }),
-      sb.from("detections").select("id", { count: "exact", head: true }).eq("reviewed", false),
-      sb.from("leads").select("id", { count: "exact", head: true }).is("deleted_at", null),
-      sb.from("api_spend").select("est_cost_usd").gte("created_at", since24h).eq("cache_hit", false),
+    const [{ data: zones }, { data: leads }, { data: dets }, { data: recent }] = await Promise.all([
+      sb.from("zones_geojson")
+        .select("id, name, description, status, boundary")
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false }),
       sb.from("leads")
-        .select("id, business_name, formatted_addr, confidence, status, updated_at, zones(name)")
+        .select("zone_id, status")
+        .is("deleted_at", null),
+      sb.from("detections").select("zone_id"),
+      sb.from("leads")
+        .select("id, business_name, formatted_addr, confidence, status, zones(name)")
         .is("deleted_at", null)
         .order("updated_at", { ascending: false })
-        .limit(8),
-      sb.from("leads").select("status").is("deleted_at", null),
+        .limit(6),
     ]);
 
-    const spend = (spend24h.data ?? []).reduce((s, r) => s + Number(r.est_cost_usd), 0);
-    const statusCounts: Record<LeadStatus, number> = {
-      new: 0, verified: 0, contacted: 0, converted: 0, rejected: 0,
-    };
-    for (const r of statusBreakdown.data ?? []) {
-      const s = r.status as LeadStatus;
-      if (s in statusCounts) statusCounts[s]++;
+    const leadsByZone = new Map<string, { total: number; verified: number; contacted: number; converted: number }>();
+    for (const l of leads ?? []) {
+      const k = l.zone_id as string;
+      const v = leadsByZone.get(k) ?? { total: 0, verified: 0, contacted: 0, converted: 0 };
+      v.total++;
+      if (l.status === "verified") v.verified++;
+      else if (l.status === "contacted") v.contacted++;
+      else if (l.status === "converted") v.converted++;
+      leadsByZone.set(k, v);
+    }
+    const detsByZone = new Map<string, number>();
+    for (const d of dets ?? []) {
+      const k = d.zone_id as string;
+      detsByZone.set(k, (detsByZone.get(k) ?? 0) + 1);
     }
 
-    return {
-      zones: zones.count ?? 0,
-      tiles: tiles.count ?? 0,
-      detections: detections.count ?? 0,
-      unreviewed: unreviewed.count ?? 0,
-      leads: leadsCount.count ?? 0,
-      spend24h: spend,
-      recentLeads: (recent.data ?? []) as unknown as DashboardData["recentLeads"],
-      statusCounts,
+    const zonesWithStats: ZoneWithStats[] = ((zones ?? []) as ZoneRow[]).map(z => {
+      const ls = leadsByZone.get(z.id) ?? { total: 0, verified: 0, contacted: 0, converted: 0 };
+      return {
+        id: z.id,
+        name: z.name,
+        description: z.description,
+        status: z.status,
+        boundary: z.boundary,
+        leads: ls.total,
+        detections: detsByZone.get(z.id) ?? 0,
+        verified: ls.verified,
+        contacted: ls.contacted,
+        converted: ls.converted,
+      };
+    });
+
+    const totals = {
+      leads: zonesWithStats.reduce((s, z) => s + z.leads, 0),
+      verified: zonesWithStats.reduce((s, z) => s + z.verified, 0),
+      contacted: zonesWithStats.reduce((s, z) => s + z.contacted, 0),
+      converted: zonesWithStats.reduce((s, z) => s + z.converted, 0),
+      detections: zonesWithStats.reduce((s, z) => s + z.detections, 0),
     };
+
+    return { zones: zonesWithStats, totals, recent: (recent ?? []) as unknown as RecentLead[] };
   } catch {
     return null;
   }
@@ -70,94 +107,116 @@ async function load(): Promise<DashboardData | null> {
 
 export default async function HomePage() {
   const d = await load();
+  const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
   if (!d) {
     return (
       <div className="space-y-5">
         <Hero />
         <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 text-sm text-amber-900">
-          <div className="font-medium mb-1">Supabase isn&apos;t connected yet.</div>
-          Set <code className="px-1 bg-amber-100 rounded text-[12px]">NEXT_PUBLIC_SUPABASE_URL</code>,{" "}
-          <code className="px-1 bg-amber-100 rounded text-[12px]">NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code>, and{" "}
-          <code className="px-1 bg-amber-100 rounded text-[12px]">SUPABASE_SECRET_KEY</code> in Vercel,
-          then run the SQL migration.
+          Supabase isn&apos;t connected yet. Configure env vars and apply migrations to see the map.
         </div>
       </div>
     );
   }
 
-  const empty = d.leads === 0;
-
   return (
-    <div className="space-y-6 sm:space-y-8">
+    <div className="space-y-5">
       <Hero />
 
-      {empty && (
-        <section className="rounded-2xl bg-gradient-to-br from-ink to-slate-800 text-white p-5 sm:p-7 shadow-lg">
-          <div className="text-[11px] uppercase tracking-wide text-slate-300">Get started</div>
-          <h2 className="text-lg sm:text-2xl font-semibold mt-1">No leads yet — pull some real data</h2>
-          <p className="text-sm text-slate-300 mt-1 max-w-xl">
-            Two sources, both real. OpenStreetMap works without setup; Companies
-            House needs a free key but covers every registered UK business.
-          </p>
-        </section>
-      )}
-
-      <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
-        <Kpi label="Zones"        value={d.zones}                  href="/zones"  icon={<MapIcon />} />
-        <Kpi label="Leads"        value={d.leads}                  href="/leads"  icon={<UsersIcon />} accent="primary" />
-        <Kpi label="In review"    value={d.unreviewed}             href="/review" icon={<CheckIcon />} />
-        <Kpi label="Cached tiles" value={d.tiles}                  href="/spend"  icon={<LayersIcon />} />
-        <Kpi label="Spend (24h)"  value={`$${d.spend24h.toFixed(2)}`} href="/spend" icon={<ChartIcon />} />
+      {/* Summary strip */}
+      <section className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 sm:gap-3">
+        <Stat label="Areas scanned" value={d.zones.length} />
+        <Stat label="Leads" value={d.totals.leads} primary />
+        <Stat label="AI detections" value={d.totals.detections} />
+        <Stat label="Contacted" value={d.totals.contacted} />
+        <Stat label="Converted" value={d.totals.converted} />
       </section>
 
-      <section className="space-y-3">
-        <SectionHeading title="Data sources" sub="Pull real businesses, then enrich with imagery." />
-        <DataSourcesPanel hasLeads={d.leads > 0} />
-      </section>
+      <UkMap
+        zones={d.zones.map(z => ({
+          id: z.id,
+          name: z.name,
+          description: z.description,
+          status: z.status,
+          leads: z.leads,
+          detections: z.detections,
+          verified: z.verified,
+          contacted: z.contacted,
+          converted: z.converted,
+          boundary: z.boundary,
+        }))}
+        mapboxToken={mapboxToken}
+      />
 
-      {d.leads > 0 && (
-        <section className="grid lg:grid-cols-3 gap-3 sm:gap-4">
-          <div className="bg-white rounded-2xl border border-slate-200 lg:col-span-2 overflow-hidden">
-            <div className="px-4 sm:px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="font-medium text-sm">Recent leads</h2>
-              <Link href="/leads" className="text-xs text-slate-500 hover:text-ink">View all →</Link>
+      <section className="grid lg:grid-cols-3 gap-3">
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 overflow-hidden">
+          <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="font-medium text-sm">Areas</h2>
+            <Link href="/zones" className="text-xs text-slate-500 hover:text-ink">All zones →</Link>
+          </div>
+          {d.zones.length === 0 ? (
+            <div className="p-6 text-sm text-slate-500 text-center">
+              No areas yet. <Link href="/zones" className="underline">Add a UK industrial estate</Link> to begin.
             </div>
+          ) : (
             <ul className="divide-y divide-slate-100">
-              {d.recentLeads.map(l => (
-                <li key={l.id}>
-                  <Link href={`/leads/${l.id}`} className="flex items-center gap-3 px-4 sm:px-5 py-3 hover:bg-slate-50 active:bg-slate-100 transition-colors">
-                    <Avatar name={l.business_name} />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate text-sm">
-                        {l.business_name ?? <span className="italic text-slate-400">unknown</span>}
+              {d.zones.map(z => {
+                const stages = [
+                  { name: "Discovered", n: z.leads,                          tone: "bg-blue-500" },
+                  { name: "Verified",   n: z.verified,                       tone: "bg-emerald-500" },
+                  { name: "Contacted",  n: z.contacted,                      tone: "bg-amber-500" },
+                  { name: "Converted",  n: z.converted,                      tone: "bg-violet-500" },
+                ];
+                return (
+                  <li key={z.id}>
+                    <Link href={`/zones/${z.id}`} className="block px-5 py-3 hover:bg-slate-50 transition-colors">
+                      <div className="flex items-baseline justify-between">
+                        <div className="font-medium">{z.name}</div>
+                        <div className="text-xs text-slate-500 tabular-nums">{z.leads} leads · {z.detections} dets</div>
                       </div>
-                      <div className="text-[11px] text-slate-500 truncate">
-                        {l.zones?.name ?? "—"} · {l.formatted_addr ?? "no address"}
+                      <div className="mt-2 flex gap-1 h-1.5">
+                        {stages.map(s => {
+                          const pct = z.leads > 0 ? (s.n / z.leads) * 100 : 0;
+                          return (
+                            <div key={s.name} className="flex-1 rounded-full bg-slate-100 overflow-hidden">
+                              <div className={`h-full ${s.tone}`} style={{ width: `${pct}%` }} />
+                            </div>
+                          );
+                        })}
                       </div>
-                    </div>
-                    <div className="hidden sm:block text-xs text-slate-500 tabular-nums">
-                      {(l.confidence * 100).toFixed(0)}%
-                    </div>
-                    <StatusPill status={l.status} />
-                  </Link>
-                </li>
-              ))}
+                    </Link>
+                  </li>
+                );
+              })}
             </ul>
-          </div>
+          )}
+        </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5">
-            <h2 className="font-medium text-sm">Lead pipeline</h2>
-            <div className="mt-3 space-y-2">
-              <PipelineRow status="new"       count={d.statusCounts.new}       total={d.leads} />
-              <PipelineRow status="verified"  count={d.statusCounts.verified}  total={d.leads} />
-              <PipelineRow status="contacted" count={d.statusCounts.contacted} total={d.leads} />
-              <PipelineRow status="converted" count={d.statusCounts.converted} total={d.leads} />
-              <PipelineRow status="rejected"  count={d.statusCounts.rejected}  total={d.leads} />
-            </div>
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+          <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="font-medium text-sm">Recent leads</h2>
+            <Link href="/pipeline" className="text-xs text-slate-500 hover:text-ink">Pipeline →</Link>
           </div>
-        </section>
-      )}
+          <ul className="divide-y divide-slate-100">
+            {d.recent.map(l => (
+              <li key={l.id}>
+                <Link href={`/leads/${l.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
+                  <Avatar name={l.business_name} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate text-sm">{l.business_name ?? "unknown"}</div>
+                    <div className="text-[11px] text-slate-500 truncate">{l.zones?.name ?? "—"}</div>
+                  </div>
+                  <StatusPill status={l.status} />
+                </Link>
+              </li>
+            ))}
+            {d.recent.length === 0 && (
+              <li className="p-6 text-sm text-slate-500 text-center">No leads yet.</li>
+            )}
+          </ul>
+        </div>
+      </section>
     </div>
   );
 }
@@ -165,72 +224,28 @@ export default async function HomePage() {
 function Hero() {
   return (
     <section className="space-y-1">
-      <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Dashboard</h1>
+      <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">UK industrial gas prospecting</h1>
       <p className="text-slate-600 text-sm sm:text-base max-w-2xl">
-        Discover UK businesses using industrial gas tanks — welders, fabricators, gas suppliers.
+        Areas you&apos;ve scanned across the UK, coloured by how far through the funnel each one is. Click a marker to drill in.
       </p>
     </section>
   );
 }
 
-function SectionHeading({ title, sub }: { title: string; sub?: string }) {
+function Stat({ label, value, primary }: { label: string; value: number; primary?: boolean }) {
   return (
-    <div>
-      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-      {sub && <p className="text-xs text-slate-500 mt-0.5">{sub}</p>}
-    </div>
-  );
-}
-
-interface KpiProps { label: string; value: number | string; href: string; icon: React.ReactNode; accent?: "primary" }
-function Kpi({ label, value, href, icon, accent }: KpiProps) {
-  const ring = accent === "primary" ? "ring-1 ring-accent/30 bg-accent/[0.04]" : "";
-  return (
-    <Link href={href}
-      className={`group block rounded-2xl border border-slate-200 bg-white p-3 sm:p-4 hover:shadow-md active:bg-slate-50 transition-all ${ring}`}>
-      <div className="flex items-center justify-between">
-        <div className="text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
-        <div className="text-slate-400 group-hover:text-accent transition-colors">{icon}</div>
-      </div>
-      <div className="text-xl sm:text-2xl lg:text-3xl font-semibold mt-1 tabular-nums">{value}</div>
-    </Link>
-  );
-}
-
-function PipelineRow({ status, count, total }: { status: LeadStatus; count: number; total: number }) {
-  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-  const tone: Record<LeadStatus, string> = {
-    new:       "bg-blue-500",
-    verified:  "bg-emerald-500",
-    contacted: "bg-amber-500",
-    converted: "bg-violet-500",
-    rejected:  "bg-slate-400",
-  };
-  return (
-    <div className="text-xs space-y-1">
-      <div className="flex justify-between">
-        <span className="capitalize text-slate-600">{status}</span>
-        <span className="text-slate-500 tabular-nums">{count} · {pct}%</span>
-      </div>
-      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-        <div className={`h-full ${tone[status]}`} style={{ width: `${pct}%` }} />
-      </div>
+    <div className={`rounded-2xl border ${primary ? "bg-accent/[0.04] border-accent/30 ring-1 ring-accent/20" : "bg-white border-slate-200"} p-3 sm:p-4`}>
+      <div className="text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-xl sm:text-2xl font-semibold tabular-nums mt-1">{value}</div>
     </div>
   );
 }
 
 function Avatar({ name }: { name: string | null }) {
-  const initials = (name ?? "?")
-    .split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? "").join("");
+  const initials = (name ?? "?").split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? "").join("");
   return (
     <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 text-slate-600 flex items-center justify-center text-xs font-semibold">
       {initials || "?"}
     </div>
   );
 }
-
-function MapIcon()    { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>; }
-function UsersIcon()  { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>; }
-function CheckIcon()  { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>; }
-function LayersIcon() { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>; }
-function ChartIcon()  { return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>; }
